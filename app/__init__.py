@@ -1,0 +1,1 @@
+# Paperless-ngx GraphRAG Integration

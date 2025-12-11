@@ -1,0 +1,23 @@
+# Core web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Async HTTP client
+httpx>=0.26.0
+
+# GraphRAG (2.6+ required for new config format)
+graphrag>=2.6.0
+
+# YAML parsing
+pyyaml>=6.0
+
+# Data processing for graph visualization
+pyarrow>=14.0.0
+pandas>=2.1.0
+
+# Optional: Better logging
+# structlog>=24.1.0

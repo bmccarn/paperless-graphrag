@@ -1,0 +1,71 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Data directories (persisted via Docker volumes)
+data/graphrag/
+data/sync_state.json
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# mypy
+.mypy_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend (Node.js / Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/next-env.d.ts
+*.tsbuildinfo
+
+# Claude
+.claude/

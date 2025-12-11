@@ -1,0 +1,46 @@
+services:
+  paperless-graphrag:
+    build: .
+    container_name: paperless-graphrag
+    ports:
+      - "8003:80"
+    volumes:
+      # Persist GraphRAG data and sync state
+      - ./data:/app/data
+    environment:
+      # Paperless-ngx connection
+      - PGRAPH_PAPERLESS_URL=${PAPERLESS_URL:-http://paperless:8000}
+      - PGRAPH_PAPERLESS_TOKEN=${PAPERLESS_TOKEN}
+
+      # LiteLLM connection
+      - PGRAPH_LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm:4000}
+      - PGRAPH_LITELLM_API_KEY=${LITELLM_API_KEY}
+
+      # Model selection (optional - these are defaults)
+      - PGRAPH_INDEXING_MODEL=${INDEXING_MODEL:-gpt-5-mini}
+      - PGRAPH_QUERY_MODEL=${QUERY_MODEL:-gpt-5-mini}
+      - PGRAPH_EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+
+      # GraphRAG settings (optional)
+      - PGRAPH_CHUNK_SIZE=${CHUNK_SIZE:-1200}
+      - PGRAPH_CHUNK_OVERLAP=${CHUNK_OVERLAP:-100}
+
+      # Rate limiting (optional)
+      - PGRAPH_REQUESTS_PER_MINUTE=${REQUESTS_PER_MINUTE:-60}
+      - PGRAPH_TOKENS_PER_MINUTE=${TOKENS_PER_MINUTE:-90000}
+      - PGRAPH_CONCURRENT_REQUESTS=${CONCURRENT_REQUESTS:-25}
+    networks:
+      - paperless-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  paperless-network:
+    external: true
+    # If your paperless network has a different name, change it here
+    # Or set external: false to create a new network
