@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -41,6 +41,12 @@ class SyncResponse(BaseModel):
     message: str
 
 
+class ConversationMessage(BaseModel):
+    """A message in the conversation history."""
+    role: str = Field(..., description="Role: 'user' or 'assistant'")
+    content: str = Field(..., description="Message content")
+
+
 class QueryRequest(BaseModel):
     """Request to query documents."""
     query: str = Field(
@@ -59,6 +65,17 @@ class QueryRequest(BaseModel):
         le=10,
         description="Community level for local search",
     )
+    conversation_history: Optional[List[ConversationMessage]] = Field(
+        default=None,
+        description="Previous messages in the conversation for context (last 5-10 messages recommended)",
+    )
+
+
+class SourceDocumentRef(BaseModel):
+    """Reference to a source document."""
+    paperless_id: int
+    title: str
+    view_url: str
 
 
 class QueryResponse(BaseModel):
@@ -66,6 +83,10 @@ class QueryResponse(BaseModel):
     query: str
     method: str
     response: str
+    source_documents: List[SourceDocumentRef] = Field(
+        default=[],
+        description="Source documents referenced in the response",
+    )
 
 
 class HealthResponse(BaseModel):
@@ -251,6 +272,42 @@ async def list_tasks(
     ]
 
 
+def format_query_with_history(
+    query: str,
+    conversation_history: Optional[List[ConversationMessage]] = None,
+    max_history: int = 6,
+) -> str:
+    """Format query with conversation history for context.
+
+    Args:
+        query: The current user query
+        conversation_history: Previous messages in the conversation
+        max_history: Maximum number of previous messages to include
+
+    Returns:
+        Formatted query string with conversation context
+    """
+    if not conversation_history:
+        return query
+
+    # Take only the last N messages to avoid context overflow
+    recent_history = conversation_history[-max_history:]
+
+    # Build conversation context
+    context_parts = ["[Previous conversation for context:]"]
+    for msg in recent_history:
+        role_label = "User" if msg.role == "user" else "Assistant"
+        # Truncate very long messages to save tokens
+        content = msg.content[:500] + "..." if len(msg.content) > 500 else msg.content
+        context_parts.append(f"{role_label}: {content}")
+
+    context_parts.append("")
+    context_parts.append("[Current question:]")
+    context_parts.append(query)
+
+    return "\n".join(context_parts)
+
+
 @router.post("/query", response_model=QueryResponse)
 async def query_documents(
     request: QueryRequest,
@@ -265,6 +322,9 @@ async def query_documents(
       (e.g., "What are the main themes in my documents?")
     - **drift**: Experimental hybrid approach
     - **basic**: Simple vector search (fastest but less context-aware)
+
+    **Conversation History:**
+    Pass previous messages in `conversation_history` for follow-up questions.
     """
     graphrag_service = get_graphrag_service(settings)
     sync_service = get_sync_service(settings)
@@ -284,12 +344,20 @@ async def query_documents(
             detail="Index has not been built yet. Run POST /sync first.",
         )
 
+    # Format query with conversation history
+    formatted_query = format_query_with_history(
+        request.query,
+        request.conversation_history
+    )
+
     try:
         result = await graphrag_service.query(
-            query=request.query,
+            query=formatted_query,
             method=request.method.value,
             community_level=request.community_level,
         )
+        # Return original query in response, not the formatted one
+        result["query"] = request.query
         return QueryResponse(**result)
 
     except Exception as e:
@@ -330,14 +398,23 @@ async def query_documents_stream(
             detail="Index has not been built yet. Run POST /sync first.",
         )
 
+    # Format query with conversation history
+    formatted_query = format_query_with_history(
+        request.query,
+        request.conversation_history
+    )
+
     async def event_generator():
         """Generate SSE events from query stream."""
         try:
             async for event in graphrag_service.query_stream(
-                query=request.query,
+                query=formatted_query,
                 method=request.method.value,
                 community_level=request.community_level,
             ):
+                # Return original query in complete event, not the formatted one
+                if event.get("type") == "complete":
+                    event["query"] = request.query
                 # Format as SSE
                 event_data = json.dumps(event)
                 yield f"data: {event_data}\n\n"

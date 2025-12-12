@@ -18,34 +18,44 @@ const methods: {
   icon: React.ElementType;
   description: string;
   bestFor: string;
+  speed: string;
+  cost: string;
 }[] = [
   {
     id: 'local',
     name: 'Local',
     icon: Search,
-    description: 'Searches specific entities and their relationships in the knowledge graph.',
-    bestFor: 'Specific questions about people, places, organizations, or their connections.',
+    description: 'Finds relevant entities in the graph and pulls their relationships and source text. Recommended as the default for most questions.',
+    bestFor: 'Specific questions about people, dates, documents, or their connections.',
+    speed: '5-15 seconds',
+    cost: 'Low',
   },
   {
     id: 'global',
     name: 'Global',
     icon: Globe,
-    description: 'Analyzes community summaries to provide broad overviews and themes.',
-    bestFor: 'Summarization, themes, high-level insights across all documents.',
+    description: 'Uses community-level summaries to answer broad questions. Requires community reports to be built during indexing.',
+    bestFor: 'High-level summaries, themes across documents, "what do my documents say about X".',
+    speed: '15-30 seconds',
+    cost: 'Medium',
   },
   {
     id: 'drift',
     name: 'Drift',
     icon: Sparkles,
-    description: 'Hybrid approach that combines local precision with global context.',
-    bestFor: 'Complex questions needing both specific details and broader context.',
+    description: 'Iteratively explores the graph following connections. Most thorough but slowest. Use when local answers feel incomplete.',
+    bestFor: 'Complex multi-hop questions needing deep reasoning across many documents.',
+    speed: '1-3 minutes',
+    cost: 'High (5-10x local)',
   },
   {
     id: 'basic',
     name: 'Basic',
     icon: Zap,
-    description: 'Simple vector similarity search without graph traversal.',
-    bestFor: 'Quick lookups when you need speed over depth.',
+    description: 'Pure vector similarity search without graph traversal. Fastest option with minimal processing.',
+    bestFor: 'Quick keyword lookups when you know roughly what you are looking for.',
+    speed: '2-5 seconds',
+    cost: 'Lowest',
   },
 ];
 
@@ -75,13 +85,17 @@ export function MethodSelector() {
                   <span className="text-xs font-medium">{method.name}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs">
-                <div className="space-y-1">
+              <TooltipContent side="bottom" className="max-w-sm">
+                <div className="space-y-2">
                   <p className="font-medium">{method.name} Search</p>
                   <p className="text-xs text-muted-foreground">{method.description}</p>
                   <p className="text-xs">
                     <span className="font-medium">Best for:</span> {method.bestFor}
                   </p>
+                  <div className="flex gap-4 text-xs pt-1 border-t border-border/50">
+                    <span><span className="font-medium">Speed:</span> {method.speed}</span>
+                    <span><span className="font-medium">Cost:</span> {method.cost}</span>
+                  </div>
                 </div>
               </TooltipContent>
             </Tooltip>

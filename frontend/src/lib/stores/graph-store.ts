@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import type { Node, Edge } from '@xyflow/react';
+
+// Color-by options for node coloring
+export type ColorByOption = 'type' | 'community';
+
+// Size-by options for node sizing
+export type SizeByOption = 'uniform' | 'degree';
 
 interface GraphFilters {
   entityTypes: string[];
@@ -8,18 +13,26 @@ interface GraphFilters {
 }
 
 interface GraphState {
-  nodes: Node[];
-  edges: Edge[];
+  // Selection state
   selectedNodeId: string | null;
-  selectedEdgeId: string | null;
+  hoveredNodeId: string | null;
+
+  // View mode state
+  is3DMode: boolean;
+  colorBy: ColorByOption;
+  sizeBy: SizeByOption;
+
+  // Filters
   filters: GraphFilters;
   isLoading: boolean;
 
   // Actions
-  setNodes: (nodes: Node[]) => void;
-  setEdges: (edges: Edge[]) => void;
   selectNode: (id: string | null) => void;
-  selectEdge: (id: string | null) => void;
+  setHoveredNode: (id: string | null) => void;
+  toggle3DMode: () => void;
+  set3DMode: (is3D: boolean) => void;
+  setColorBy: (colorBy: ColorByOption) => void;
+  setSizeBy: (sizeBy: SizeByOption) => void;
   setFilters: (filters: Partial<GraphFilters>) => void;
   resetFilters: () => void;
   setLoading: (loading: boolean) => void;
@@ -32,17 +45,22 @@ const defaultFilters: GraphFilters = {
 };
 
 export const useGraphStore = create<GraphState>((set) => ({
-  nodes: [],
-  edges: [],
+  // Initial state
   selectedNodeId: null,
-  selectedEdgeId: null,
+  hoveredNodeId: null,
+  is3DMode: true, // Default to 3D as per user preference
+  colorBy: 'type',
+  sizeBy: 'degree',
   filters: defaultFilters,
   isLoading: false,
 
-  setNodes: (nodes) => set({ nodes }),
-  setEdges: (edges) => set({ edges }),
-  selectNode: (id) => set({ selectedNodeId: id, selectedEdgeId: null }),
-  selectEdge: (id) => set({ selectedEdgeId: id, selectedNodeId: null }),
+  // Actions
+  selectNode: (id) => set({ selectedNodeId: id }),
+  setHoveredNode: (id) => set({ hoveredNodeId: id }),
+  toggle3DMode: () => set((state) => ({ is3DMode: !state.is3DMode })),
+  set3DMode: (is3D) => set({ is3DMode: is3D }),
+  setColorBy: (colorBy) => set({ colorBy }),
+  setSizeBy: (sizeBy) => set({ sizeBy }),
   setFilters: (filters) =>
     set((state) => ({
       filters: { ...state.filters, ...filters },

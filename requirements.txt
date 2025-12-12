@@ -19,5 +19,9 @@ pyyaml>=6.0
 pyarrow>=14.0.0
 pandas>=2.1.0
 
+# Database for persistent chat history
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+
 # Optional: Better logging
 # structlog>=24.1.0

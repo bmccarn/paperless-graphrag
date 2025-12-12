@@ -12,6 +12,7 @@ import yaml
 
 from app.config import Settings
 from app.models.document import GraphRAGDocument
+from app.services.graph_reader import GraphReaderService
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,36 @@ GRAPHRAG_STEPS = [
 
 # Type for progress callback: (percent, message, detail)
 ProgressCallback = Callable[[int, str, Optional[str]], None]
+
+
+def _extract_source_ids_from_response(response: str) -> tuple[list[str], list[str]]:
+    """Extract source and entity IDs from GraphRAG response text.
+
+    Parses patterns like [Data: Sources (291, 292); Entities (1780, 3514)]
+    and extracts both source IDs and entity IDs.
+
+    Args:
+        response: The GraphRAG response text
+
+    Returns:
+        Tuple of (source_ids, entity_ids)
+    """
+    source_ids = []
+    entity_ids = []
+
+    # Match patterns like [Data: Sources (291, 292); ...] or [Data: Sources (291)]
+    source_matches = re.findall(r'\[Data:[^\]]*Sources\s*\(([^)]+)\)[^\]]*\]', response)
+    for match in source_matches:
+        ids = [s.strip() for s in match.split(',')]
+        source_ids.extend(ids)
+
+    # Match patterns like [Data: Entities (1780, 3514)] or [Data: ... Entities (1780)]
+    entity_matches = re.findall(r'\[Data:[^\]]*Entities\s*\(([^)]+)\)[^\]]*\]', response)
+    for match in entity_matches:
+        ids = [s.strip() for s in match.split(',')]
+        entity_ids.extend(ids)
+
+    return list(set(source_ids)), list(set(entity_ids))  # Deduplicate
 
 
 class GraphRAGService:
@@ -74,7 +105,7 @@ class GraphRAGService:
         settings_config = {
             "models": {
                 "default_chat_model": {
-                    # Use new LiteLLM config format (GraphRAG 2.6+)
+                    # Used for indexing (entity extraction, summarization, etc.)
                     "type": "chat",
                     "auth_type": "api_key",
                     "api_key": "${GRAPHRAG_API_KEY}",
@@ -86,8 +117,21 @@ class GraphRAGService:
                     "concurrent_requests": self.settings.concurrent_requests,
                     "request_timeout": 600,  # 10 minutes for large text units
                 },
+                "query_chat_model": {
+                    # Used for search queries (local, global, drift)
+                    "type": "chat",
+                    "auth_type": "api_key",
+                    "api_key": "${GRAPHRAG_API_KEY}",
+                    "model_provider": "openai",
+                    "model": self.settings.query_model,
+                    "api_base": self.settings.litellm_base_url,
+                    "requests_per_minute": self.settings.requests_per_minute,
+                    "tokens_per_minute": self.settings.tokens_per_minute,
+                    "concurrent_requests": self.settings.concurrent_requests,
+                    "request_timeout": 600,
+                },
                 "default_embedding_model": {
-                    # Use new LiteLLM config format (GraphRAG 2.6+)
+                    # Used for embeddings (both indexing and queries)
                     "type": "embedding",
                     "auth_type": "api_key",
                     "api_key": "${GRAPHRAG_API_KEY}",
@@ -114,47 +158,94 @@ class GraphRAGService:
                 "size": self.settings.chunk_size,
                 "overlap": self.settings.chunk_overlap,
                 "group_by_columns": ["id"],
+                "prepend_metadata": True,
+                "chunk_size_includes_metadata": True,
             },
-            "entity_extraction": {
+            "extract_graph": {
+                "prompt": "prompts/extract_graph.txt",
                 "entity_types": [
-                    # Core entities
-                    "person",
                     "organization",
-                    "location",
-                    # Document management specifics
-                    "tax_form",           # IRS forms, state tax forms, schedules
-                    "financial_transaction",  # payments, invoices, purchases, refunds
-                    "account",            # bank accounts, policy numbers, member IDs
-                    "insurance_policy",   # coverages, endorsements, claims
-                    "medical_record",     # procedures, conditions, medications, test results
-                    "subscription",       # services, memberships, recurring charges
-                    "legal_document",     # contracts, agreements, court filings
-                    "vehicle",            # cars, boats, property for insurance/DMV
-                    "certification",      # training, licenses, credentials
-                    "government_form",    # non-tax government documents
+                    "person",
+                    "tax preparer",
+                    "tax form",
+                    "tax identification number",
+                    "financial account",
+                    "transaction",
+                    "monetary amount",
+                    "certification",
+                    "insurance policy",
+                    "insurance claim",
+                    "medical benefit",
+                    "healthcare service",
+                    "government benefits program",
+                    "statute or regulation",
+                    "appraisal",
+                    "address",
+                    "date/event",
                 ],
-                "max_gleanings": 1,
+                "max_gleanings": 2,
             },
             "summarize_descriptions": {
+                "prompt": "prompts/summarize_descriptions.txt",
                 "max_length": 500,
             },
             "community_reports": {
+                "prompt": "prompts/community_report_graph.txt",
                 "max_length": 2000,
             },
             "local_search": {
-                "text_unit_prop": 0.5,
+                "chat_model_id": "query_chat_model",
+                "text_unit_prop": self.settings.text_unit_prop,
                 "community_prop": 0.1,
-                "top_k_entities": 20,
-                "top_k_relationships": 20,
-                "max_tokens": 32000,
+                "top_k_entities": self.settings.top_k_entities,
+                "top_k_relationships": self.settings.top_k_relationships,
+                "max_tokens": self.settings.max_tokens,
             },
             "global_search": {
-                "max_tokens": 32000,
+                "chat_model_id": "query_chat_model",
+                "max_tokens": self.settings.max_tokens,
                 "dynamic_community_selection": {
                     "enabled": True,
                     "max_communities": 50,
                 },
                 "concurrent_coroutines": 32,
+            },
+            "drift_search": {
+                "chat_model_id": "query_chat_model",
+                "data_max_tokens": min(64000, self.settings.max_tokens // 2),
+                "concurrency": 10,
+                "drift_k_followups": 5,
+                "primer_folds": 3,
+                "n_depth": 2,
+                "local_search_text_unit_prop": self.settings.text_unit_prop,
+                "local_search_community_prop": 0.1,
+                "local_search_top_k_mapped_entities": self.settings.top_k_entities,
+                "local_search_top_k_relationships": self.settings.top_k_relationships,
+                "local_search_max_data_tokens": min(64000, self.settings.max_tokens // 2),
+            },
+            "extract_claims": {
+                "enabled": True,
+                "description": "Claims about financial obligations, policy coverages, insurance benefits, legal agreements, tax liabilities, medical coverage, certification requirements, or regulatory compliance",
+                "max_gleanings": 2,
+            },
+            "embed_graph": {
+                "enabled": True,
+                "dimensions": 384,
+                "num_walks": 10,
+                "walk_length": 40,
+                "window_size": 2,
+                "iterations": 3,
+            },
+            "umap": {
+                "enabled": True,
+            },
+            "prune_graph": {
+                "min_node_freq": 2,
+                "min_node_degree": 1,
+            },
+            "snapshots": {
+                "graphml": True,
+                "embeddings": True,
             },
         }
 
@@ -326,25 +417,49 @@ class GraphRAGService:
         stderr_lines = []
 
         async def read_stream(stream, lines_list, is_stderr=False):
-            """Read stream line by line and process progress."""
-            while True:
-                line = await stream.readline()
-                if not line:
-                    break
-                decoded = line.decode('utf-8', errors='replace').strip()
-                if decoded:
-                    lines_list.append(decoded)
-                    # Log the output
-                    if is_stderr:
-                        logger.debug("GraphRAG stderr: %s", decoded)
-                    else:
-                        logger.debug("GraphRAG stdout: %s", decoded)
+            """Read stream and process progress.
 
-                    # Parse and report progress
-                    if progress_callback:
-                        progress = self._parse_progress(decoded)
-                        if progress:
-                            progress_callback(*progress)
+            Uses chunked reading to handle very long lines that exceed
+            asyncio's default readline buffer limit (64KB).
+            """
+            buffer = ""
+            while True:
+                try:
+                    # Read chunks instead of lines to handle very long output
+                    chunk = await stream.read(8192)  # 8KB chunks
+                    if not chunk:
+                        # Process any remaining buffer content
+                        if buffer.strip():
+                            lines_list.append(buffer.strip())
+                            if is_stderr:
+                                logger.debug("GraphRAG stderr: %s", buffer.strip()[:500])
+                            else:
+                                logger.debug("GraphRAG stdout: %s", buffer.strip()[:500])
+                        break
+
+                    buffer += chunk.decode('utf-8', errors='replace')
+
+                    # Process complete lines from buffer
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        decoded = line.strip()
+                        if decoded:
+                            lines_list.append(decoded)
+                            # Log the output (truncate very long lines)
+                            log_line = decoded[:500] + "..." if len(decoded) > 500 else decoded
+                            if is_stderr:
+                                logger.debug("GraphRAG stderr: %s", log_line)
+                            else:
+                                logger.debug("GraphRAG stdout: %s", log_line)
+
+                            # Parse and report progress
+                            if progress_callback:
+                                progress = self._parse_progress(decoded)
+                                if progress:
+                                    progress_callback(*progress)
+                except Exception as e:
+                    logger.warning("Error reading stream: %s", e)
+                    break
 
         # Read both streams concurrently
         await asyncio.gather(
@@ -387,7 +502,7 @@ class GraphRAGService:
             community_level: Community level for local search
 
         Returns:
-            Dict with query, method, and response
+            Dict with query, method, response, and source_documents
 
         Raises:
             RuntimeError: If query fails
@@ -402,10 +517,30 @@ class GraphRAGService:
         if not result:
             raise RuntimeError("Query completed without result")
 
+        response_text = result.get("response", "")
+
+        # Extract source documents from response
+        source_ids, entity_ids = _extract_source_ids_from_response(response_text)
+        source_documents = []
+        graph_reader = GraphReaderService(self.output_dir)
+        paperless_base_url = self.settings.paperless_url
+
+        if source_ids:
+            source_documents = graph_reader.get_documents_from_source_ids(
+                source_ids, paperless_base_url
+            )
+
+        # If no source documents from Sources, try getting them from entity IDs
+        if not source_documents and entity_ids:
+            source_documents = graph_reader.get_documents_from_entity_ids(
+                entity_ids, paperless_base_url
+            )
+
         return {
             "query": query,
             "method": method,
-            "response": result.get("response", ""),
+            "response": response_text,
+            "source_documents": source_documents,
         }
 
     def _parse_graphrag_log(self, line: str) -> Optional[dict]:
@@ -415,7 +550,7 @@ class GraphRAGService:
         """
         line_lower = line.lower()
 
-        # Skip noise/debug lines
+        # Skip noise/debug lines and Python traceback patterns
         skip_patterns = [
             "debug:",
             "warning:",
@@ -425,8 +560,26 @@ class GraphRAGService:
             "using default",
             "api_base",
             "api_version",
+            # Python traceback patterns
+            "traceback",
+            "exception",
+            "error:",
+            "file \"",  # Python traceback file references
         ]
         if any(p in line_lower for p in skip_patterns):
+            return None
+
+        # Skip Python traceback lines (return statements, raise statements, etc.)
+        # These look like: "return bound(*args, **kwds)" or "raise SomeError"
+        traceback_indicators = [
+            line.strip().startswith("return "),
+            line.strip().startswith("raise "),
+            line.strip().startswith("File "),
+            line.strip().startswith("^"),
+            "bound(*args" in line,
+            "**kwds)" in line,
+        ]
+        if any(traceback_indicators):
             return None
 
         # Parse specific GraphRAG operations
@@ -678,9 +831,27 @@ class GraphRAGService:
             yield {"type": "error", "message": f"Query failed: {stderr_text}"}
             return
 
+        # Extract source documents from response
+        source_ids, entity_ids = _extract_source_ids_from_response(stdout_text)
+        source_documents = []
+        graph_reader = GraphReaderService(self.output_dir)
+        paperless_base_url = self.settings.paperless_url
+
+        if source_ids:
+            source_documents = graph_reader.get_documents_from_source_ids(
+                source_ids, paperless_base_url
+            )
+
+        # If no source documents from Sources, try getting them from entity IDs
+        if not source_documents and entity_ids:
+            source_documents = graph_reader.get_documents_from_entity_ids(
+                entity_ids, paperless_base_url
+            )
+
         yield {
             "type": "complete",
             "response": stdout_text,
             "query": query,
             "method": method,
+            "source_documents": source_documents,
         }

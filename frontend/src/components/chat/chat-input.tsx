@@ -1,50 +1,70 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { useCallback } from 'react';
+import { Send, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputActions,
+  PromptInputAction,
+} from '@/components/ui/prompt-input';
 import { useChatStore } from '@/lib/stores';
 import { submitQueryStream } from '@/lib/api';
 import { toast } from 'sonner';
+import type { ConversationMessage } from '@/types';
 
 export function ChatInput() {
-  const [input, setInput] = useState('');
-  const {
-    isLoading,
-    selectedMethod,
-    communityLevel,
-    addMessage,
-    setLoading,
-    setThinking,
-  } = useChatStore();
+  // Use selectors for reactive state
+  const isLoading = useChatStore((state) => state.isLoading);
+  const selectedMethod = useChatStore((state) => state.selectedMethod);
+  const communityLevel = useChatStore((state) => state.communityLevel);
+  const input = useChatStore((state) => state.input);
+  const sessions = useChatStore((state) => state.sessions);
+  const currentSessionId = useChatStore((state) => state.currentSessionId);
 
   const handleSubmit = useCallback(async () => {
-    if (!input.trim() || isLoading) return;
+    const store = useChatStore.getState();
+    const currentInput = store.input;
 
-    const userMessage = input.trim();
-    setInput('');
+    if (!currentInput.trim() || store.isLoading) return;
+
+    const userMessage = currentInput.trim();
+    store.setInput('');
+
+    // Get current messages for conversation history (before adding new message)
+    const currentSession = store.sessions.find(s => s.id === store.currentSessionId);
+    const currentMessages = currentSession?.messages || [];
 
     // Add user message
-    addMessage({
+    store.addMessage({
       role: 'user',
       content: userMessage,
     });
 
-    setLoading(true);
-    setThinking({ message: 'Starting...', detail: 'Preparing query' });
+    store.setLoading(true);
+    store.setThinking({ message: 'Starting...', detail: 'Preparing query' });
+
+    // Build conversation history from recent messages (last 6)
+    const conversationHistory: ConversationMessage[] = currentMessages
+      .slice(-6)
+      .map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
 
     try {
       const response = await submitQueryStream(
         {
           query: userMessage,
-          method: selectedMethod,
-          community_level: communityLevel,
+          method: store.selectedMethod,
+          community_level: store.communityLevel,
+          conversation_history: conversationHistory.length > 0 ? conversationHistory : undefined,
         },
         (event) => {
-          // Update thinking state based on events
+          // Update thinking state based on events - use getState() for fresh reference
           if (event.type === 'status' || event.type === 'thinking') {
-            setThinking({
+            useChatStore.getState().setThinking({
               message: event.message || 'Processing...',
               detail: event.detail,
             });
@@ -52,55 +72,58 @@ export function ChatInput() {
         }
       );
 
-      addMessage({
+      useChatStore.getState().addMessage({
         role: 'assistant',
         content: response.response,
-        method: selectedMethod,
+        method: store.selectedMethod,
+        sourceDocuments: response.source_documents,
       });
     } catch (error) {
       toast.error('Failed to get response', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
-      addMessage({
+      useChatStore.getState().addMessage({
         role: 'assistant',
         content: 'Sorry, I encountered an error processing your request. Please try again.',
       });
     } finally {
-      setLoading(false);
-      setThinking(null);
+      useChatStore.getState().setLoading(false);
+      useChatStore.getState().setThinking(null);
     }
-  }, [input, isLoading, selectedMethod, communityLevel, addMessage, setLoading, setThinking]);
+  }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
+  // Get setInput for the PromptInput component
+  const setInput = useChatStore((state) => state.setInput);
 
   return (
-    <div className="flex gap-3 items-end">
-      <Textarea
+    <PromptInput
+      value={input}
+      onValueChange={setInput}
+      isLoading={isLoading}
+      onSubmit={handleSubmit}
+      className="w-full bg-card border-border/50 shadow-sm"
+    >
+      <PromptInputTextarea
         placeholder="Ask a question about your documents..."
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={isLoading}
-        className="min-h-[60px] max-h-[200px] resize-none shadow-sm bg-card border-border/50 focus:border-primary/50"
-        rows={2}
+        className="min-h-[44px]"
       />
-      <Button
-        onClick={handleSubmit}
-        disabled={!input.trim() || isLoading}
-        size="icon"
-        className="h-[60px] w-[60px] shadow-md hover:shadow-lg transition-all"
-      >
-        {isLoading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : (
-          <Send className="h-5 w-5" />
-        )}
-      </Button>
-    </div>
+      <PromptInputActions className="justify-end px-2 pb-2">
+        <PromptInputAction tooltip={isLoading ? 'Stop' : 'Send message'}>
+          <Button
+            onClick={handleSubmit}
+            disabled={!input.trim() && !isLoading}
+            size="icon"
+            className="h-9 w-9 rounded-full"
+            variant={isLoading ? 'destructive' : 'default'}
+          >
+            {isLoading ? (
+              <Square className="h-4 w-4 fill-current" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </PromptInputAction>
+      </PromptInputActions>
+    </PromptInput>
   );
 }

@@ -18,6 +18,7 @@ export interface GetEntitiesParams {
   type?: string;
   search?: string;
   community_id?: string;
+  community_level?: number;
 }
 
 export async function getEntities(params?: GetEntitiesParams): Promise<PaginatedResponse<Entity>> {
@@ -27,6 +28,7 @@ export async function getEntities(params?: GetEntitiesParams): Promise<Paginated
   if (params?.type) searchParams.set('type', params.type);
   if (params?.search) searchParams.set('search', params.search);
   if (params?.community_id) searchParams.set('community_id', params.community_id);
+  if (params?.community_level !== undefined) searchParams.set('community_level', String(params.community_level));
 
   const query = searchParams.toString();
   return apiClient.get<PaginatedResponse<Entity>>(`/graph/entities${query ? `?${query}` : ''}`);
@@ -63,4 +65,22 @@ export async function getCommunities(level?: number): Promise<PaginatedResponse<
 
 export async function getCommunity(communityId: string): Promise<Community & { entities: Entity[] }> {
   return apiClient.get<Community & { entities: Entity[] }>(`/graph/communities/${encodeURIComponent(communityId)}`);
+}
+
+export async function getRelationshipsForEntities(entityNames: string[], limit: number = 1000): Promise<PaginatedResponse<Relationship>> {
+  return apiClient.post<PaginatedResponse<Relationship>>('/graph/relationships/for-entities', {
+    entity_names: entityNames,
+    limit,
+  });
+}
+
+export interface SourceDocument {
+  paperless_id: number;
+  graphrag_doc_id: string;
+  title: string;
+  view_url: string;
+}
+
+export async function getEntitySourceDocuments(entityId: string): Promise<SourceDocument[]> {
+  return apiClient.get<SourceDocument[]>(`/graph/entities/${encodeURIComponent(entityId)}/source-documents`);
 }

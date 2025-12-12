@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { useEffect, useState, useRef } from 'react';
 import { MessageItem } from './message-item';
 import { useChatStore } from '@/lib/stores';
 import { Loader2, Brain, Search, Sparkles, Database, Network, FileText } from 'lucide-react';
@@ -33,15 +32,40 @@ function getThinkingIcon(message?: string) {
 }
 
 export function MessageList() {
-  const { messages: getMessages, isLoading, thinking } = useChatStore();
-  const messages = getMessages();
+  // Handle hydration - wait for client-side state to be ready
+  const [isHydrated, setIsHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  const isLoading = useChatStore((state) => state.isLoading);
+  const thinking = useChatStore((state) => state.thinking);
+  const sessions = useChatStore((state) => state.sessions);
+  const currentSessionId = useChatStore((state) => state.currentSessionId);
+
+  // Get messages from current session
+  const messages = sessions.find(s => s.id === currentSessionId)?.messages || [];
+
+  // Auto-scroll to bottom when messages change or loading state changes
+  useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isLoading, thinking]);
+  }, [messages.length, isLoading, thinking]);
+
+  // Show placeholder during hydration to avoid mismatch
+  if (!isHydrated) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-4 max-w-md">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+          <p className="text-muted-foreground text-sm">Loading chat...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (messages.length === 0) {
     return (
@@ -59,8 +83,8 @@ export function MessageList() {
   }
 
   return (
-    <ScrollArea className="flex-1 pr-4">
-      <div className="space-y-4 pb-4">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto pr-4">
+      <div className="space-y-4 pb-4 px-4">
         {messages.map((message) => (
           <MessageItem key={message.id} message={message} />
         ))}
@@ -85,8 +109,7 @@ export function MessageList() {
             </div>
           </div>
         )}
-        <div ref={scrollRef} />
       </div>
-    </ScrollArea>
+    </div>
   );
 }

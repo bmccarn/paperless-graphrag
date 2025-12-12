@@ -1,6 +1,8 @@
 """Service for reading GraphRAG output parquet files."""
 
+import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -63,6 +65,51 @@ class GraphReaderService:
             "relationship_types": relationship_types,
         }
 
+    def _compute_entity_degrees(self) -> dict:
+        """Compute the degree (number of connections) for each entity."""
+        relationships_df = self._read_parquet("relationships.parquet")
+        if relationships_df is None:
+            return {}
+
+        degree_counts = {}
+
+        # Count occurrences in source and target columns
+        for _, row in relationships_df.iterrows():
+            source = str(row.get("source", ""))
+            target = str(row.get("target", ""))
+
+            if source:
+                degree_counts[source] = degree_counts.get(source, 0) + 1
+            if target:
+                degree_counts[target] = degree_counts.get(target, 0) + 1
+
+        return degree_counts
+
+    def _build_entity_community_map(self, level: int = 0) -> dict:
+        """Build a mapping from entity ID to community ID at a given level."""
+        communities_df = self._read_parquet("communities.parquet")
+        if communities_df is None:
+            return {}
+
+        entity_to_community = {}
+
+        # Filter by level if the column exists
+        if "level" in communities_df.columns:
+            communities_df = communities_df[communities_df["level"] == level]
+
+        for _, row in communities_df.iterrows():
+            community_id = str(row.get("community", row.get("id", "")))
+            entity_ids = row.get("entity_ids", [])
+
+            # entity_ids might be a numpy array or list
+            if hasattr(entity_ids, 'tolist'):
+                entity_ids = entity_ids.tolist()
+
+            for entity_id in entity_ids:
+                entity_to_community[str(entity_id)] = community_id
+
+        return entity_to_community
+
     def get_entities(
         self,
         limit: int = 100,
@@ -70,11 +117,25 @@ class GraphReaderService:
         entity_type: Optional[str] = None,
         search: Optional[str] = None,
         community_id: Optional[str] = None,
+        include_degree: bool = True,
+        community_level: int = 0,
+        sort_by_degree: bool = True,
     ) -> dict:
-        """Get paginated list of entities."""
+        """Get paginated list of entities.
+
+        Args:
+            sort_by_degree: If True, sort entities by degree (most connected first)
+        """
         df = self._read_parquet("entities.parquet")
         if df is None:
             return {"items": [], "total": 0, "has_more": False}
+
+        # Compute degree counts if requested (use parquet degree if available)
+        use_parquet_degree = "degree" in df.columns
+        degree_counts = {} if use_parquet_degree else (self._compute_entity_degrees() if include_degree else {})
+
+        # Build entity-to-community mapping from communities parquet
+        entity_community_map = self._build_entity_community_map(level=community_level)
 
         # Apply filters
         if entity_type:
@@ -89,9 +150,20 @@ class GraphReaderService:
             df = df[mask]
 
         if community_id:
-            # Community might be stored differently depending on graphrag version
+            # Filter by community - check both direct column and lookup
             if "community" in df.columns:
                 df = df[df["community"].astype(str) == community_id]
+            else:
+                # Filter using entity_community_map
+                entity_ids_in_community = [
+                    eid for eid, cid in entity_community_map.items()
+                    if cid == community_id
+                ]
+                df = df[df["id"].astype(str).isin(entity_ids_in_community)]
+
+        # Sort by degree (most connected first) if requested and degree column exists
+        if sort_by_degree and use_parquet_degree:
+            df = df.sort_values("degree", ascending=False)
 
         total = len(df)
 
@@ -101,14 +173,29 @@ class GraphReaderService:
         # Convert to dict
         entities = []
         for _, row in df.iterrows():
+            entity_id = str(row.get("id", row.get("title", "")))
+            entity_name = str(row.get("title", row.get("name", "Unknown")))
+
+            # Get degree from parquet or computed
+            if use_parquet_degree:
+                degree = int(row.get("degree", 0))
+            else:
+                degree = degree_counts.get(entity_name, 0)
+
             entity = {
-                "id": str(row.get("id", row.get("title", ""))),
-                "name": str(row.get("title", row.get("name", "Unknown"))),
+                "id": entity_id,
+                "name": entity_name,
                 "type": str(row.get("type", "unknown")),
                 "description": str(row.get("description", "")),
+                "degree": degree,
             }
-            if "community" in row:
+
+            # Add community_id from mapping or direct column
+            if "community" in df.columns:
                 entity["community_id"] = str(row["community"])
+            elif entity_id in entity_community_map:
+                entity["community_id"] = entity_community_map[entity_id]
+
             entities.append(entity)
 
         return {
@@ -189,11 +276,28 @@ class GraphReaderService:
         source_id: Optional[str] = None,
         target_id: Optional[str] = None,
         relationship_type: Optional[str] = None,
+        sort_by_combined_degree: bool = True,
+        entity_names: Optional[list] = None,
     ) -> dict:
-        """Get paginated list of relationships."""
+        """Get paginated list of relationships.
+
+        Args:
+            sort_by_combined_degree: If True, sort by combined_degree (relationships
+                between high-degree entities first)
+            entity_names: If provided, only return relationships where BOTH source
+                and target are in this list
+        """
         df = self._read_parquet("relationships.parquet")
         if df is None:
             return {"items": [], "total": 0, "has_more": False}
+
+        # Filter by entity names if provided (only relationships connecting loaded entities)
+        if entity_names:
+            entity_set = set(entity_names)
+            df = df[
+                df["source"].astype(str).isin(entity_set) &
+                df["target"].astype(str).isin(entity_set)
+            ]
 
         # Apply filters
         if source_id:
@@ -205,6 +309,10 @@ class GraphReaderService:
         if relationship_type:
             if "type" in df.columns:
                 df = df[df["type"].str.lower() == relationship_type.lower()]
+
+        # Sort by combined_degree (relationships between high-degree entities first)
+        if sort_by_combined_degree and "combined_degree" in df.columns:
+            df = df.sort_values("combined_degree", ascending=False)
 
         total = len(df)
 
@@ -304,3 +412,234 @@ class GraphReaderService:
                 })
 
         return community
+
+    def _load_sync_state(self) -> dict:
+        """Load the sync state file that maps Paperless IDs to GraphRAG doc IDs."""
+        # sync_state.json is in the parent of output_dir (data/ not data/graphrag/output/)
+        sync_state_path = self.output_dir.parent.parent / "sync_state.json"
+        if not sync_state_path.exists():
+            logger.warning("Sync state file not found: %s", sync_state_path)
+            return {}
+        try:
+            with open(sync_state_path, "r") as f:
+                data = json.load(f)
+                return data.get("documents", {})
+        except Exception as e:
+            logger.error("Failed to load sync state: %s", e)
+            return {}
+
+    def _extract_paperless_id_from_text(self, text: str) -> Optional[int]:
+        """Extract Paperless document ID from chunk text YAML frontmatter."""
+        # Look for "document_id: NNN" in the YAML frontmatter
+        match = re.search(r"document_id:\s*(\d+)", text)
+        if match:
+            return int(match.group(1))
+        return None
+
+    def get_source_documents_for_entity(self, entity_name: str, paperless_base_url: str = "") -> list:
+        """Find Paperless documents that contain mentions of this entity.
+
+        Args:
+            entity_name: The name of the entity to search for
+            paperless_base_url: Base URL of the Paperless instance for constructing full URLs
+
+        Returns:
+            List of dicts with paperless_id, title, and view_url
+        """
+        text_units_df = self._read_parquet("text_units.parquet")
+        documents_df = self._read_parquet("documents.parquet")
+
+        if text_units_df is None:
+            return []
+
+        # Find text units that mention the entity (case-insensitive)
+        entity_lower = entity_name.lower()
+        mask = text_units_df["text"].str.lower().str.contains(entity_lower, na=False)
+        matching_chunks = text_units_df[mask]
+
+        if matching_chunks.empty:
+            return []
+
+        # Extract unique Paperless document IDs from matching chunks
+        paperless_ids = set()
+        for _, row in matching_chunks.iterrows():
+            text = row.get("text", "")
+            doc_id = self._extract_paperless_id_from_text(text)
+            if doc_id:
+                paperless_ids.add(doc_id)
+
+        # Load sync state for title lookup
+        sync_state = self._load_sync_state()
+
+        # Also try to get titles from documents.parquet
+        doc_titles = {}
+        if documents_df is not None:
+            for _, row in documents_df.iterrows():
+                text = str(row.get("text", ""))
+                doc_id = self._extract_paperless_id_from_text(text)
+                if doc_id:
+                    # Extract title from frontmatter
+                    title_match = re.search(r"title:\s*(.+?)(?:\n|$)", text)
+                    if title_match:
+                        doc_titles[doc_id] = title_match.group(1).strip()
+
+        results = []
+        # Clean the base URL (remove trailing slash)
+        base_url = paperless_base_url.rstrip("/") if paperless_base_url else ""
+
+        for paperless_id in sorted(paperless_ids):
+            # Get title from sync state or documents parquet
+            sync_record = sync_state.get(str(paperless_id), {})
+            title = doc_titles.get(paperless_id) or f"Document {paperless_id}"
+
+            results.append({
+                "paperless_id": paperless_id,
+                "graphrag_doc_id": sync_record.get("graphrag_doc_id", f"paperless_{paperless_id}"),
+                "title": title,
+                "view_url": f"{base_url}/documents/{paperless_id}/",
+            })
+
+        return results
+
+    def get_documents_from_source_ids(
+        self, source_ids: list[str], paperless_base_url: str = ""
+    ) -> list[dict]:
+        """Get Paperless documents from GraphRAG source/text_unit IDs.
+
+        Source IDs in GraphRAG responses (from [Data: Sources (...)]) are row indices
+        into the text_units.parquet file. This method resolves them to Paperless documents.
+
+        Args:
+            source_ids: List of source IDs (row indices in text_units.parquet)
+            paperless_base_url: Base URL of the Paperless instance
+
+        Returns:
+            List of dicts with paperless_id, title, and view_url
+        """
+        text_units_df = self._read_parquet("text_units.parquet")
+        if text_units_df is None:
+            return []
+
+        paperless_ids = set()
+
+        for source_id in source_ids:
+            if source_id.isdigit():
+                row_idx = int(source_id)
+                if 0 <= row_idx < len(text_units_df):
+                    text = str(text_units_df.iloc[row_idx].get("text", ""))
+                    doc_id = self._extract_paperless_id_from_text(text)
+                    if doc_id:
+                        paperless_ids.add(doc_id)
+
+        if not paperless_ids:
+            return []
+
+        # Load sync state for titles
+        sync_state = self._load_sync_state()
+
+        # Also try to get titles from documents.parquet
+        documents_df = self._read_parquet("documents.parquet")
+        doc_titles = {}
+        if documents_df is not None:
+            for _, row in documents_df.iterrows():
+                text = str(row.get("text", ""))
+                doc_id = self._extract_paperless_id_from_text(text)
+                if doc_id:
+                    title_match = re.search(r"title:\s*(.+?)(?:\n|$)", text)
+                    if title_match:
+                        doc_titles[doc_id] = title_match.group(1).strip()
+
+        # Clean the base URL
+        base_url = paperless_base_url.rstrip("/") if paperless_base_url else ""
+
+        results = []
+        for paperless_id in sorted(paperless_ids):
+            sync_record = sync_state.get(str(paperless_id), {})
+            title = doc_titles.get(paperless_id) or sync_record.get("title") or f"Document {paperless_id}"
+
+            results.append({
+                "paperless_id": paperless_id,
+                "title": title,
+                "view_url": f"{base_url}/documents/{paperless_id}/",
+            })
+
+        return results
+
+    def get_documents_from_entity_ids(
+        self, entity_ids: list[str], paperless_base_url: str = ""
+    ) -> list[dict]:
+        """Get Paperless documents from GraphRAG entity IDs.
+
+        Entity IDs in GraphRAG responses (from [Data: Entities (...)]) are row indices
+        into the entities.parquet file. This method resolves them to source documents
+        by looking up which text units mention those entities.
+
+        Args:
+            entity_ids: List of entity IDs (row indices in entities.parquet)
+            paperless_base_url: Base URL of the Paperless instance
+
+        Returns:
+            List of dicts with paperless_id, title, and view_url
+        """
+        entities_df = self._read_parquet("entities.parquet")
+        text_units_df = self._read_parquet("text_units.parquet")
+
+        if entities_df is None or text_units_df is None:
+            return []
+
+        # Get entity names from IDs (row indices)
+        entity_names = set()
+        for entity_id in entity_ids:
+            if entity_id.isdigit():
+                row_idx = int(entity_id)
+                if 0 <= row_idx < len(entities_df):
+                    name = str(entities_df.iloc[row_idx].get("title", ""))
+                    if name:
+                        entity_names.add(name.lower())
+
+        if not entity_names:
+            return []
+
+        # Find text units that mention these entities
+        paperless_ids = set()
+        for _, row in text_units_df.iterrows():
+            text = str(row.get("text", "")).lower()
+            # Check if any entity name appears in this text unit
+            if any(name in text for name in entity_names):
+                doc_id = self._extract_paperless_id_from_text(str(row.get("text", "")))
+                if doc_id:
+                    paperless_ids.add(doc_id)
+
+        if not paperless_ids:
+            return []
+
+        # Load sync state for titles
+        sync_state = self._load_sync_state()
+
+        # Also try to get titles from documents.parquet
+        documents_df = self._read_parquet("documents.parquet")
+        doc_titles = {}
+        if documents_df is not None:
+            for _, row in documents_df.iterrows():
+                text = str(row.get("text", ""))
+                doc_id = self._extract_paperless_id_from_text(text)
+                if doc_id:
+                    title_match = re.search(r"title:\s*(.+?)(?:\n|$)", text)
+                    if title_match:
+                        doc_titles[doc_id] = title_match.group(1).strip()
+
+        # Clean the base URL
+        base_url = paperless_base_url.rstrip("/") if paperless_base_url else ""
+
+        results = []
+        for paperless_id in sorted(paperless_ids)[:10]:  # Limit to 10 documents
+            sync_record = sync_state.get(str(paperless_id), {})
+            title = doc_titles.get(paperless_id) or sync_record.get("title") or f"Document {paperless_id}"
+
+            results.append({
+                "paperless_id": paperless_id,
+                "title": title,
+                "view_url": f"{base_url}/documents/{paperless_id}/",
+            })
+
+        return results

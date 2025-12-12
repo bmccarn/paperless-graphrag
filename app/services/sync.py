@@ -408,7 +408,9 @@ class SyncService:
             self.state.index_version += 1
             await self.save_state()
         except Exception as e:
+            import traceback
             logger.error("Indexing failed: %s", e)
+            logger.error("Full traceback:\n%s", traceback.format_exc())
             return {
                 "sync": sync_stats,
                 "index": {"status": "failed", "error": str(e)},

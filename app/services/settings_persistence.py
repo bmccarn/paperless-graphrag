@@ -10,25 +10,106 @@ logger = logging.getLogger(__name__)
 # Settings that can be configured at runtime (sensitive ones marked)
 CONFIGURABLE_SETTINGS = {
     # Connection settings
-    "paperless_url": {"type": "string", "sensitive": False, "required": True, "label": "Paperless URL"},
-    "paperless_token": {"type": "string", "sensitive": True, "required": True, "label": "Paperless API Token"},
-    "litellm_base_url": {"type": "string", "sensitive": False, "required": True, "label": "LiteLLM Base URL"},
-    "litellm_api_key": {"type": "string", "sensitive": True, "required": True, "label": "LiteLLM API Key"},
+    "paperless_url": {
+        "type": "string", "sensitive": False, "required": True,
+        "label": "Paperless URL",
+        "description": "Base URL for your Paperless-ngx instance (e.g., http://paperless:8000)"
+    },
+    "paperless_token": {
+        "type": "string", "sensitive": True, "required": True,
+        "label": "Paperless API Token",
+        "description": "API token from Paperless-ngx for authentication. Generate in Paperless Settings > Users."
+    },
+    "litellm_base_url": {
+        "type": "string", "sensitive": False, "required": True,
+        "label": "LiteLLM Base URL",
+        "description": "Base URL for your LiteLLM proxy (e.g., http://litellm:4000)"
+    },
+    "litellm_api_key": {
+        "type": "string", "sensitive": True, "required": True,
+        "label": "LiteLLM API Key",
+        "description": "API key for LiteLLM authentication. Configure in your LiteLLM proxy settings."
+    },
 
     # Model settings
-    "indexing_model": {"type": "string", "sensitive": False, "required": False, "label": "Indexing Model", "default": "gpt-5-mini"},
-    "query_model": {"type": "string", "sensitive": False, "required": False, "label": "Query Model", "default": "gpt-5-mini"},
-    "embedding_model": {"type": "string", "sensitive": False, "required": False, "label": "Embedding Model", "default": "text-embedding-3-small"},
+    "indexing_model": {
+        "type": "string", "sensitive": False, "required": False,
+        "label": "Indexing Model", "default": "gpt-5-mini",
+        "description": "LLM used for document indexing (entity extraction, summarization). Larger models = better extraction but higher cost."
+    },
+    "query_model": {
+        "type": "string", "sensitive": False, "required": False,
+        "label": "Query Model", "default": "gpt-5-mini",
+        "description": "LLM used for answering queries. Can be different from indexing model - often a larger model for better responses."
+    },
+    "embedding_model": {
+        "type": "string", "sensitive": False, "required": False,
+        "label": "Embedding Model", "default": "text-embedding-3-small",
+        "description": "Model for generating text embeddings. Used for vector similarity search in basic mode."
+    },
 
-    # GraphRAG settings
-    "chunk_size": {"type": "integer", "sensitive": False, "required": False, "label": "Chunk Size", "default": 1200, "min": 100, "max": 4000},
-    "chunk_overlap": {"type": "integer", "sensitive": False, "required": False, "label": "Chunk Overlap", "default": 100, "min": 0, "max": 500},
-    "community_level": {"type": "integer", "sensitive": False, "required": False, "label": "Community Level", "default": 2, "min": 0, "max": 10},
+    # GraphRAG indexing settings
+    "chunk_size": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Chunk Size", "default": 1200, "min": 100, "max": 4000,
+        "description": "Size of text chunks in characters. Smaller = more granular but slower indexing. Requires re-index."
+    },
+    "chunk_overlap": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Chunk Overlap", "default": 100, "min": 0, "max": 500,
+        "description": "Overlap between chunks to preserve context at boundaries. Requires re-index to take effect."
+    },
+    "community_level": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Community Level", "default": 2, "min": 0, "max": 10,
+        "description": "Hierarchy level for community summaries in global search. Higher = more granular communities."
+    },
+
+    # GraphRAG search settings
+    "top_k_entities": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Top K Entities", "default": 20, "min": 5, "max": 100,
+        "description": "Max number of entities to include in search context. Higher = more comprehensive but may hit token limits."
+    },
+    "top_k_relationships": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Top K Relationships", "default": 20, "min": 5, "max": 100,
+        "description": "Max number of relationships to include. Higher = more connections visible but uses more tokens."
+    },
+    "text_unit_prop": {
+        "type": "float", "sensitive": False, "required": False,
+        "label": "Text Unit Proportion", "default": 0.6, "min": 0.1, "max": 0.9,
+        "description": "Proportion of context budget for source text (vs graph data). Higher = more original document text in responses."
+    },
+    "max_tokens": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Max Context Tokens", "default": 128000, "min": 4000, "max": 200000,
+        "description": "Max tokens for search context. Should match your query model's context window."
+    },
 
     # Rate limiting
-    "concurrent_requests": {"type": "integer", "sensitive": False, "required": False, "label": "Concurrent Requests", "default": 100, "min": 1, "max": 1000},
-    "requests_per_minute": {"type": "integer", "sensitive": False, "required": False, "label": "Requests per Minute", "default": 500, "min": 1, "max": 10000},
-    "tokens_per_minute": {"type": "integer", "sensitive": False, "required": False, "label": "Tokens per Minute", "default": 2000000, "min": 1000, "max": 10000000},
+    "concurrent_requests": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Concurrent Requests", "default": 100, "min": 1, "max": 1000,
+        "description": "Max parallel LLM requests during indexing. Reduce if hitting rate limits."
+    },
+    "requests_per_minute": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Requests per Minute", "default": 500, "min": 1, "max": 10000,
+        "description": "Max LLM requests per minute. Match your API provider's rate limits."
+    },
+    "tokens_per_minute": {
+        "type": "integer", "sensitive": False, "required": False,
+        "label": "Tokens per Minute", "default": 2000000, "min": 1000, "max": 10000000,
+        "description": "Max tokens per minute for LLM calls. Match your API provider's TPM limits."
+    },
+
+    # Database settings
+    "database_url": {
+        "type": "string", "sensitive": True, "required": False,
+        "label": "Database URL",
+        "description": "PostgreSQL connection string for persistent chat history (e.g., postgresql://user:pass@host:5432/db). Leave empty to use browser-local storage only."
+    },
 }
 
 
@@ -88,6 +169,15 @@ class SettingsPersistence:
                 if config["type"] == "integer" and value is not None:
                     try:
                         value = int(value)
+                        if "min" in config and value < config["min"]:
+                            value = config["min"]
+                        if "max" in config and value > config["max"]:
+                            value = config["max"]
+                    except (ValueError, TypeError):
+                        continue
+                elif config["type"] == "float" and value is not None:
+                    try:
+                        value = float(value)
                         if "min" in config and value < config["min"]:
                             value = config["min"]
                         if "max" in config and value > config["max"]:
@@ -180,6 +270,7 @@ class SettingsPersistence:
                 "default": config.get("default"),
                 "min": config.get("min"),
                 "max": config.get("max"),
+                "description": config.get("description", ""),
             }
 
         return result

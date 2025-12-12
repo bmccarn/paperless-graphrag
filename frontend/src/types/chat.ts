@@ -1,4 +1,4 @@
-import { QueryMethod } from './api';
+import { QueryMethod, SourceDocumentRef } from './api';
 
 export interface Message {
   id: string;
@@ -6,6 +6,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   method?: QueryMethod;
+  sourceDocuments?: SourceDocumentRef[];
 }
 
 export interface ChatState {

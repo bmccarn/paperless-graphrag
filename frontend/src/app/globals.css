@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -119,4 +120,80 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Starfield background for graph visualization */
+.graph-starfield {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.graph-starfield::before,
+.graph-starfield::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 40px 70px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 50px 160px, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 90px 40px, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(2px 2px at 160px 120px, rgba(255,255,255,0.9), transparent),
+    radial-gradient(1px 1px at 200px 50px, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 220px 140px, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 260px 90px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 300px 180px, rgba(255,255,255,0.5), transparent),
+    radial-gradient(2px 2px at 340px 60px, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 380px 130px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 420px 20px, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 460px 100px, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 500px 160px, rgba(255,255,255,0.6), transparent);
+  background-repeat: repeat;
+  background-size: 550px 200px;
+  animation: starfield-twinkle 4s ease-in-out infinite alternate;
+}
+
+.graph-starfield::after {
+  background-image:
+    radial-gradient(1px 1px at 25px 45px, rgba(200,220,255,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 75px 95px, rgba(255,240,200,0.8), transparent),
+    radial-gradient(1px 1px at 125px 25px, rgba(220,200,255,0.6), transparent),
+    radial-gradient(1px 1px at 175px 145px, rgba(200,255,220,0.5), transparent),
+    radial-gradient(2px 2px at 225px 75px, rgba(255,200,200,0.9), transparent),
+    radial-gradient(1px 1px at 275px 115px, rgba(200,240,255,0.6), transparent),
+    radial-gradient(1px 1px at 325px 35px, rgba(255,255,200,0.7), transparent),
+    radial-gradient(1px 1px at 375px 165px, rgba(220,255,220,0.5), transparent),
+    radial-gradient(1.5px 1.5px at 425px 85px, rgba(255,220,255,0.8), transparent),
+    radial-gradient(1px 1px at 475px 125px, rgba(200,200,255,0.6), transparent),
+    radial-gradient(1px 1px at 525px 55px, rgba(255,200,220,0.7), transparent);
+  background-size: 600px 180px;
+  animation: starfield-twinkle 5s ease-in-out infinite alternate-reverse;
+  opacity: 0.7;
+}
+
+@keyframes starfield-twinkle {
+  0% {
+    opacity: 0.5;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0.9;
+    transform: translateY(-2px);
+  }
+}
+
+/* Nebula gradient overlay for extra depth */
+.graph-nebula {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 20% 80%, rgba(79, 142, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(213, 0, 249, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(0, 230, 118, 0.04) 0%, transparent 60%);
 }

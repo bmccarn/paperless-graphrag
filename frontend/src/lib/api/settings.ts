@@ -31,3 +31,7 @@ export async function testConnections(): Promise<ConnectionTestResult> {
 export async function deleteSetting(key: string): Promise<{ success: boolean }> {
   return apiClient.delete<{ success: boolean }>(`/settings/${key}`);
 }
+
+export async function restartBackend(): Promise<{ success: boolean; message: string }> {
+  return apiClient.post<{ success: boolean; message: string }>('/settings/restart');
+}

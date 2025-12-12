@@ -9,8 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 from app.api.graph_routes import router as graph_router
 from app.api.settings_routes import router as settings_router
+from app.api.logs_routes import router as logs_router
+from app.api.chat_routes import router as chat_router
 from app.config import get_settings, is_configured
 from app.services.graphrag import GraphRAGService
+from app.db.connection import init_db, close_db
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +28,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info("Starting paperless-graphrag service...")
+
+    # Initialize database for chat history (if configured)
+    db_initialized = await init_db()
+    if db_initialized:
+        logger.info("Chat history database initialized")
+    else:
+        logger.info("Chat history will use browser storage (no database configured)")
 
     if is_configured():
         settings = get_settings()
@@ -50,6 +60,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down paperless-graphrag service...")
+    await close_db()
 
 
 # Create FastAPI app
@@ -98,11 +109,15 @@ app.add_middleware(
 app.include_router(router, prefix="/api/v1", tags=["api"])
 app.include_router(graph_router, prefix="/api/v1", tags=["graph"])
 app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
+app.include_router(logs_router, prefix="/api/v1", tags=["logs"])
+app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 
 # Also mount at root for convenience
 app.include_router(router, tags=["api"])
 app.include_router(graph_router, tags=["graph"])
 app.include_router(settings_router, tags=["settings"])
+app.include_router(logs_router, tags=["logs"])
+app.include_router(chat_router, tags=["chat"])
 
 
 @app.get("/")

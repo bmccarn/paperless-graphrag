@@ -26,8 +26,9 @@ class SettingValue(BaseModel):
     sensitive: bool = False
     required: bool = False
     default: Optional[Any] = None
-    min: Optional[int] = None
-    max: Optional[int] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    description: str = ""
 
 
 class SettingsResponse(BaseModel):
@@ -128,6 +129,18 @@ async def update_settings(request: SettingsUpdateRequest):
             except (ValueError, TypeError):
                 errors[key] = f"{key} must be an integer"
                 continue
+        elif config["type"] == "float":
+            try:
+                float_value = float(value)
+                if "min" in config and float_value < config["min"]:
+                    errors[key] = f"{key} must be at least {config['min']}"
+                    continue
+                if "max" in config and float_value > config["max"]:
+                    errors[key] = f"{key} must be at most {config['max']}"
+                    continue
+            except (ValueError, TypeError):
+                errors[key] = f"{key} must be a number"
+                continue
 
         # Store the value
         persistence.set(key, value)
@@ -200,6 +213,36 @@ async def delete_setting(key: str):
     persistence.delete(key)
 
     return {"success": True, "key": key, "message": f"Setting '{key}' reverted to default"}
+
+
+@router.post("/restart")
+async def restart_backend():
+    """Restart the backend service to apply settings changes.
+
+    This triggers a graceful restart of the FastAPI service, which will:
+    1. Reload runtime settings from disk
+    2. Regenerate GraphRAG settings.yaml
+    3. Apply model and search configuration changes
+
+    Returns immediately with success status; restart happens asynchronously.
+    """
+    import os
+    import signal
+    import asyncio
+
+    async def delayed_restart():
+        """Delay restart slightly to allow response to be sent."""
+        await asyncio.sleep(0.5)
+        # Send SIGHUP to trigger supervisor restart
+        os.kill(os.getpid(), signal.SIGHUP)
+
+    # Schedule the restart
+    asyncio.create_task(delayed_restart())
+
+    return {
+        "success": True,
+        "message": "Restart initiated. Service will reload in a moment."
+    }
 
 
 @router.post("/test-connection")

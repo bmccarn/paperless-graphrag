@@ -13,16 +13,29 @@ export interface HealthResponse {
 }
 
 // Query Types
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface QueryRequest {
   query: string;
   method: QueryMethod;
   community_level?: number;
+  conversation_history?: ConversationMessage[];
+}
+
+export interface SourceDocumentRef {
+  paperless_id: number;
+  title: string;
+  view_url: string;
 }
 
 export interface QueryResponse {
   query: string;
   method: string;
   response: string;
+  source_documents?: SourceDocumentRef[];
 }
 
 // Sync Types
@@ -80,6 +93,28 @@ export interface Entity {
   type: string;
   description: string;
   community_id?: string;
+  degree?: number; // Number of connections (relationships) for this entity
+}
+
+// Force graph node type (for visualization)
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  community_id?: string;
+  degree: number;
+  val: number; // Node size value
+  color: string; // Node color
+}
+
+// Force graph link type (for visualization)
+export interface GraphLink {
+  source: string;
+  target: string;
+  type: string;
+  description?: string;
+  weight?: number;
 }
 
 export interface EntityDetail extends Entity {
@@ -122,12 +157,13 @@ export interface SettingValue {
   value: string | number | null;
   has_value: boolean;
   label: string;
-  type: 'string' | 'integer';
+  type: 'string' | 'integer' | 'float';
   sensitive: boolean;
   required: boolean;
   default: string | number | null;
   min?: number;
   max?: number;
+  description?: string;
 }
 
 export interface SettingsResponse {

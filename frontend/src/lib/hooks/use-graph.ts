@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getGraphOverview, getEntities, getRelationships, GetEntitiesParams } from '@/lib/api';
+import { getGraphOverview, getEntities, getRelationshipsForEntities, GetEntitiesParams } from '@/lib/api';
 import type { GraphOverview, Entity, Relationship } from '@/types';
 
 export function useGraphOverview() {
@@ -44,13 +44,20 @@ export function useGraphData(params?: GetEntitiesParams) {
 
       const parsedParams = JSON.parse(paramsKey) as GetEntitiesParams;
 
-      const [entitiesRes, relationshipsRes] = await Promise.all([
-        getEntities({ ...parsedParams, limit: parsedParams?.limit || 200 }),
-        getRelationships({ limit: 500 }),
-      ]);
-
+      // First, fetch entities (sorted by degree - most connected first)
+      const entitiesRes = await getEntities({ ...parsedParams, limit: parsedParams?.limit || 200 });
       setEntities(entitiesRes.items);
-      setRelationships(relationshipsRes.items);
+
+      // Then, fetch relationships that connect the loaded entities
+      // This ensures all returned relationships will have matching nodes
+      if (entitiesRes.items.length > 0) {
+        const entityNames = entitiesRes.items.map((e) => e.name);
+        const relationshipsRes = await getRelationshipsForEntities(entityNames, 2000);
+        setRelationships(relationshipsRes.items);
+      } else {
+        setRelationships([]);
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch graph data'));

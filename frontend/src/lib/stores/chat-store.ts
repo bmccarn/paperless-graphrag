@@ -1,6 +1,20 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Message, QueryMethod } from '@/types';
+import * as chatApi from '@/lib/api/chat';
+
+// Polyfill for crypto.randomUUID in environments where it's not available
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback implementation
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export interface ChatSession {
   id: string;
@@ -22,24 +36,35 @@ interface ChatState {
   thinking: ThinkingState | null;
   selectedMethod: QueryMethod;
   communityLevel: number;
+  input: string;
+
+  // Database sync state
+  dbEnabled: boolean;
+  dbSyncing: boolean;
+  dbError: string | null;
 
   // Computed
   currentSession: () => ChatSession | undefined;
   messages: () => Message[];
 
   // Session actions
-  createSession: (name?: string) => string;
+  createSession: (name?: string) => Promise<string>;
   switchSession: (sessionId: string) => void;
-  renameSession: (sessionId: string, name: string) => void;
-  deleteSession: (sessionId: string) => void;
+  renameSession: (sessionId: string, name: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
 
   // Message actions
-  addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void;
+  addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => Promise<void>;
   setLoading: (loading: boolean) => void;
   setThinking: (thinking: ThinkingState | null) => void;
   setMethod: (method: QueryMethod) => void;
   setCommunityLevel: (level: number) => void;
+  setInput: (input: string) => void;
   clearHistory: () => void;
+
+  // Database actions
+  initFromDatabase: () => Promise<void>;
+  checkDbStatus: () => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -51,6 +76,10 @@ export const useChatStore = create<ChatState>()(
       thinking: null,
       selectedMethod: 'local',
       communityLevel: 2,
+      input: '',
+      dbEnabled: false,
+      dbSyncing: false,
+      dbError: null,
 
       // Computed getters
       currentSession: () => {
@@ -63,23 +92,114 @@ export const useChatStore = create<ChatState>()(
         return session?.messages || [];
       },
 
+      // Check database status
+      checkDbStatus: async () => {
+        try {
+          const status = await chatApi.getChatStatus();
+          set({ dbEnabled: status.enabled, dbError: null });
+        } catch {
+          set({ dbEnabled: false, dbError: 'Failed to check database status' });
+        }
+      },
+
+      // Initialize sessions from database
+      initFromDatabase: async () => {
+        const state = get();
+        if (!state.dbEnabled) return;
+
+        set({ dbSyncing: true });
+        try {
+          const remoteSessions = await chatApi.getSessions();
+
+          // Convert API response to local format
+          const sessions: ChatSession[] = remoteSessions.map(s => ({
+            id: s.id,
+            name: s.name,
+            messages: [], // Messages loaded on demand
+            createdAt: new Date(s.createdAt),
+            updatedAt: new Date(s.updatedAt),
+          }));
+
+          // Merge with local sessions (prefer remote)
+          const localOnlySessions = state.sessions.filter(
+            local => !sessions.some(remote => remote.id === local.id)
+          );
+
+          set({
+            sessions: [...sessions, ...localOnlySessions],
+            dbSyncing: false,
+            dbError: null,
+          });
+
+          // If current session is from DB, load its messages
+          if (state.currentSessionId) {
+            const currentInRemote = sessions.find(s => s.id === state.currentSessionId);
+            if (currentInRemote) {
+              try {
+                const fullSession = await chatApi.getSession(state.currentSessionId);
+                if (fullSession?.messages) {
+                  set(prev => ({
+                    sessions: prev.sessions.map(s =>
+                      s.id === state.currentSessionId
+                        ? {
+                            ...s,
+                            messages: fullSession.messages!.map(m => ({
+                              id: m.id,
+                              role: m.role,
+                              content: m.content,
+                              timestamp: new Date(m.timestamp),
+                              method: m.method as QueryMethod | undefined,
+                              sourceDocuments: m.sourceDocuments,
+                            })),
+                          }
+                        : s
+                    ),
+                  }));
+                }
+              } catch {
+                // Ignore - use cached messages
+              }
+            }
+          }
+        } catch (error) {
+          set({
+            dbSyncing: false,
+            dbError: error instanceof Error ? error.message : 'Failed to load sessions'
+          });
+        }
+      },
+
       // Create a new chat session
-      createSession: (name?: string) => {
-        const id = crypto.randomUUID();
+      createSession: async (name?: string) => {
+        const id = generateUUID();
         const now = new Date();
         const sessionCount = get().sessions.length;
+        const sessionName = name || `Chat ${sessionCount + 1}`;
+
         const newSession: ChatSession = {
           id,
-          name: name || `Chat ${sessionCount + 1}`,
+          name: sessionName,
           messages: [],
           createdAt: now,
           updatedAt: now,
         };
 
+        // Update local state immediately
         set((state) => ({
           sessions: [newSession, ...state.sessions],
           currentSessionId: id,
         }));
+
+        // Sync to database if enabled
+        const state = get();
+        if (state.dbEnabled) {
+          try {
+            await chatApi.createSession(sessionName, id);
+          } catch (error) {
+            console.error('Failed to sync session to database:', error);
+            // Don't fail - local session still works
+          }
+        }
 
         return id;
       },
@@ -87,19 +207,61 @@ export const useChatStore = create<ChatState>()(
       // Switch to a different session
       switchSession: (sessionId: string) => {
         set({ currentSessionId: sessionId });
+
+        // Load messages from DB if enabled
+        const state = get();
+        if (state.dbEnabled) {
+          chatApi.getSession(sessionId)
+            .then(fullSession => {
+              if (fullSession?.messages) {
+                set(prev => ({
+                  sessions: prev.sessions.map(s =>
+                    s.id === sessionId
+                      ? {
+                          ...s,
+                          messages: fullSession.messages!.map(m => ({
+                            id: m.id,
+                            role: m.role,
+                            content: m.content,
+                            timestamp: new Date(m.timestamp),
+                            method: m.method as QueryMethod | undefined,
+                            sourceDocuments: m.sourceDocuments,
+                          })),
+                        }
+                      : s
+                  ),
+                }));
+              }
+            })
+            .catch(() => {
+              // Ignore - use cached messages
+            });
+        }
       },
 
       // Rename a session
-      renameSession: (sessionId: string, name: string) => {
+      renameSession: async (sessionId: string, name: string) => {
+        // Update local state immediately
         set((state) => ({
           sessions: state.sessions.map(s =>
             s.id === sessionId ? { ...s, name, updatedAt: new Date() } : s
           ),
         }));
+
+        // Sync to database if enabled
+        const state = get();
+        if (state.dbEnabled) {
+          try {
+            await chatApi.renameSession(sessionId, name);
+          } catch (error) {
+            console.error('Failed to sync rename to database:', error);
+          }
+        }
       },
 
       // Delete a session
-      deleteSession: (sessionId: string) => {
+      deleteSession: async (sessionId: string) => {
+        // Update local state immediately
         set((state) => {
           const newSessions = state.sessions.filter(s => s.id !== sessionId);
           const needsNewCurrent = state.currentSessionId === sessionId;
@@ -111,60 +273,107 @@ export const useChatStore = create<ChatState>()(
               : state.currentSessionId,
           };
         });
+
+        // Sync to database if enabled
+        const state = get();
+        if (state.dbEnabled) {
+          try {
+            await chatApi.deleteSession(sessionId);
+          } catch (error) {
+            console.error('Failed to delete session from database:', error);
+          }
+        }
       },
 
       // Add a message to the current session
-      addMessage: (message) =>
-        set((state) => {
-          // Create a session if none exists
-          if (!state.currentSessionId || !state.sessions.find(s => s.id === state.currentSessionId)) {
-            const id = crypto.randomUUID();
-            const now = new Date();
-            const newMessage = {
-              ...message,
-              id: crypto.randomUUID(),
-              timestamp: now,
-            };
+      addMessage: async (message) => {
+        const state = get();
+        const messageId = generateUUID();
+        const timestamp = new Date();
 
-            // Generate session name from first user message
-            const sessionName = message.role === 'user'
-              ? message.content.slice(0, 30) + (message.content.length > 30 ? '...' : '')
-              : `Chat ${state.sessions.length + 1}`;
+        // Create a session if none exists
+        if (!state.currentSessionId || !state.sessions.find(s => s.id === state.currentSessionId)) {
+          const sessionId = generateUUID();
+          const now = new Date();
+          const newMessage: Message = {
+            ...message,
+            id: messageId,
+            timestamp: now,
+          };
 
-            const newSession: ChatSession = {
-              id,
-              name: sessionName,
-              messages: [newMessage],
-              createdAt: now,
-              updatedAt: now,
-            };
+          // Generate session name from first user message
+          const sessionName = message.role === 'user'
+            ? message.content.slice(0, 30) + (message.content.length > 30 ? '...' : '')
+            : `Chat ${state.sessions.length + 1}`;
 
-            return {
-              sessions: [newSession, ...state.sessions],
-              currentSessionId: id,
-            };
+          const newSession: ChatSession = {
+            id: sessionId,
+            name: sessionName,
+            messages: [newMessage],
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          set({
+            sessions: [newSession, ...state.sessions],
+            currentSessionId: sessionId,
+          });
+
+          // Sync to database if enabled
+          if (state.dbEnabled) {
+            try {
+              await chatApi.createSession(sessionName, sessionId);
+              await chatApi.addMessage(sessionId, {
+                id: messageId,
+                role: message.role,
+                content: message.content,
+                method: message.method,
+                sourceDocuments: message.sourceDocuments,
+                timestamp: timestamp.toISOString(),
+              });
+            } catch (error) {
+              console.error('Failed to sync message to database:', error);
+            }
           }
 
-          // Add to existing session
-          return {
-            sessions: state.sessions.map(s =>
-              s.id === state.currentSessionId
-                ? {
-                    ...s,
-                    messages: [
-                      ...s.messages,
-                      {
-                        ...message,
-                        id: crypto.randomUUID(),
-                        timestamp: new Date(),
-                      },
-                    ],
-                    updatedAt: new Date(),
-                  }
-                : s
-            ),
-          };
-        }),
+          return;
+        }
+
+        // Add to existing session (local)
+        const newMessage: Message = {
+          ...message,
+          id: messageId,
+          timestamp,
+        };
+
+        set({
+          sessions: state.sessions.map(s =>
+            s.id === state.currentSessionId
+              ? {
+                  ...s,
+                  messages: [...s.messages, newMessage],
+                  updatedAt: new Date(),
+                }
+              : s
+          ),
+        });
+
+        // Sync to database if enabled
+        if (state.dbEnabled && state.currentSessionId) {
+          try {
+            await chatApi.addMessage(state.currentSessionId, {
+              id: messageId,
+              role: message.role,
+              content: message.content,
+              method: message.method,
+              sourceDocuments: message.sourceDocuments,
+              timestamp: timestamp.toISOString(),
+            });
+          } catch (error) {
+            console.error('Failed to sync message to database:', error);
+          }
+        }
+      },
 
       setLoading: (loading) => set({ isLoading: loading }),
 
@@ -173,6 +382,8 @@ export const useChatStore = create<ChatState>()(
       setMethod: (method) => set({ selectedMethod: method }),
 
       setCommunityLevel: (level) => set({ communityLevel: level }),
+
+      setInput: (input) => set({ input }),
 
       // Clear current session's messages
       clearHistory: () =>
@@ -194,6 +405,7 @@ export const useChatStore = create<ChatState>()(
         currentSessionId: state.currentSessionId,
         selectedMethod: state.selectedMethod,
         communityLevel: state.communityLevel,
+        // Don't persist dbEnabled - check on each load
       }),
     }
   )

@@ -1,11 +1,12 @@
 'use client';
 
-import { X, GripHorizontal } from 'lucide-react';
-import { useState, useRef, useCallback } from 'react';
+import { X, GripHorizontal, FileText, ExternalLink, Loader2 } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useGraphStore } from '@/lib/stores';
+import { getEntitySourceDocuments, type SourceDocument } from '@/lib/api/graph';
 import type { Entity, Relationship } from '@/types';
 
 interface GraphSidebarProps {
@@ -19,6 +20,8 @@ export function GraphSidebar({ entities, relationships, focusedEntity }: GraphSi
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
+  const [sourceDocuments, setSourceDocuments] = useState<SourceDocument[]>([]);
+  const [loadingSourceDocs, setLoadingSourceDocs] = useState(false);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsDragging(true);
@@ -46,6 +49,29 @@ export function GraphSidebar({ entities, relationships, focusedEntity }: GraphSi
     setIsDragging(false);
     dragRef.current = null;
   }, []);
+
+  // Fetch source documents when entity is selected
+  useEffect(() => {
+    if (!selectedNodeId) {
+      setSourceDocuments([]);
+      return;
+    }
+
+    const fetchSourceDocs = async () => {
+      setLoadingSourceDocs(true);
+      try {
+        const docs = await getEntitySourceDocuments(selectedNodeId);
+        setSourceDocuments(docs);
+      } catch (error) {
+        console.error('Failed to fetch source documents:', error);
+        setSourceDocuments([]);
+      } finally {
+        setLoadingSourceDocs(false);
+      }
+    };
+
+    fetchSourceDocs();
+  }, [selectedNodeId]);
 
   if (!selectedNodeId) {
     return null;
@@ -91,38 +117,48 @@ export function GraphSidebar({ entities, relationships, focusedEntity }: GraphSi
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/50"
+        className="fixed inset-0 z-[55] bg-black/50"
         onClick={() => selectNode(null)}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       />
 
-      {/* Draggable Modal */}
+      {/* Modal - Draggable on desktop, full-width bottom sheet on mobile */}
       <div
-        className="fixed z-50 w-[600px] max-w-[90vw] h-[70vh] bg-background border rounded-lg shadow-2xl flex flex-col overflow-hidden"
+        className="fixed z-[60] bg-background border rounded-t-xl md:rounded-lg shadow-2xl flex flex-col overflow-hidden
+          inset-x-0 bottom-0 max-h-[70vh] md:max-h-[70vh]
+          md:inset-auto md:w-[600px] md:max-w-[90vw]"
         style={{
-          left: `calc(50% + ${position.x}px)`,
-          top: `calc(50% + ${position.y}px)`,
-          transform: 'translate(-50%, -50%)',
+          // Only apply position on desktop
+          ...(typeof window !== 'undefined' && window.innerWidth >= 768 ? {
+            left: `calc(50% + ${position.x}px)`,
+            top: `calc(50% + ${position.y}px)`,
+            transform: 'translate(-50%, -50%)',
+          } : {}),
+          // Safe area for mobile notch/home indicator
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
-        {/* Draggable Header */}
+        {/* Header - Draggable on desktop, swipe indicator on mobile */}
         <div
-          className="flex items-center justify-between p-4 border-b shrink-0 cursor-move bg-muted/50"
+          className="flex items-center justify-between p-3 md:p-4 border-b shrink-0 md:cursor-move bg-muted/50"
           onMouseDown={handleMouseDown}
         >
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <GripHorizontal className="h-5 w-5 text-muted-foreground shrink-0" />
+          {/* Mobile swipe indicator */}
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 bg-muted-foreground/30 rounded-full md:hidden" />
+
+          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1 mt-2 md:mt-0">
+            <GripHorizontal className="h-5 w-5 text-muted-foreground shrink-0 hidden md:block" />
             <div className="min-w-0">
-              <h3 className="font-semibold break-words text-lg">{selectedEntity.name}</h3>
-              <Badge variant="secondary" className="mt-1">
+              <h3 className="font-semibold break-words text-base md:text-lg">{selectedEntity.name}</h3>
+              <Badge variant="secondary" className="mt-1 text-xs">
                 {selectedEntity.type}
               </Badge>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => selectNode(null)}>
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9 md:h-10 md:w-10" onClick={() => selectNode(null)}>
             <X className="h-5 w-5" />
           </Button>
         </div>
@@ -205,6 +241,44 @@ export function GraphSidebar({ entities, relationships, focusedEntity }: GraphSi
                   </span>
                 )}
               </div>
+            </div>
+
+            <Separator />
+
+            {/* Source Documents Section */}
+            <div>
+              <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Source Documents
+                {loadingSourceDocs ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <span>({sourceDocuments.length})</span>
+                )}
+              </h4>
+              {loadingSourceDocs ? (
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              ) : sourceDocuments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No source documents found</p>
+              ) : (
+                <div className="space-y-2">
+                  {sourceDocuments.map((doc) => (
+                    <a
+                      key={doc.paperless_id}
+                      href={doc.view_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 rounded bg-muted hover:bg-muted/80 transition-colors group"
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm flex-1 truncate" title={doc.title}>
+                        {doc.title}
+                      </span>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

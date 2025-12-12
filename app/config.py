@@ -124,6 +124,32 @@ class Settings(BaseSettings):
         description="Chunk overlap for text splitting"
     )
 
+    # Search settings
+    top_k_entities: int = Field(
+        default=20,
+        ge=5,
+        le=100,
+        description="Max entities in search context"
+    )
+    top_k_relationships: int = Field(
+        default=20,
+        ge=5,
+        le=100,
+        description="Max relationships in search context"
+    )
+    text_unit_prop: float = Field(
+        default=0.6,
+        ge=0.1,
+        le=0.9,
+        description="Proportion of context for source text"
+    )
+    max_tokens: int = Field(
+        default=128000,
+        ge=4000,
+        le=200000,
+        description="Max tokens for search context"
+    )
+
     # Rate limiting settings
     concurrent_requests: int = Field(
         default=100,
@@ -140,6 +166,12 @@ class Settings(BaseSettings):
         default=2000000,
         ge=1000,
         description="Max tokens per minute to LLM"
+    )
+
+    # Database settings (for persistent chat history)
+    database_url: Optional[str] = Field(
+        default=None,
+        description="PostgreSQL connection string for persistent chat history"
     )
 
     model_config = {

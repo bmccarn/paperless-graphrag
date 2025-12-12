@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.dependencies import get_graph_reader_service
@@ -35,6 +35,7 @@ class EntityResponse(BaseModel):
     type: str
     description: str
     community_id: Optional[str] = None
+    degree: int = 0  # Number of connections (relationships) for this entity
 
 
 class RelationshipResponse(BaseModel):
@@ -60,6 +61,13 @@ class CommunityResponse(BaseModel):
 
 class CommunityDetailResponse(CommunityResponse):
     entities: list[EntityResponse]
+
+
+class SourceDocumentResponse(BaseModel):
+    paperless_id: int
+    graphrag_doc_id: str
+    title: str
+    view_url: str
 
 
 class PaginatedEntitiesResponse(BaseModel):
@@ -100,6 +108,8 @@ async def list_entities(
     type: Optional[str] = Query(default=None, description="Filter by entity type"),
     search: Optional[str] = Query(default=None, description="Search in name and description"),
     community_id: Optional[str] = Query(default=None, description="Filter by community"),
+    community_level: int = Query(default=0, ge=0, le=10, description="Community level for mapping"),
+    sort_by_degree: bool = Query(default=True, description="Sort by degree (most connected first)"),
     graph_reader: GraphReaderService = Depends(get_graph_reader_service),
 ):
     """Get paginated list of entities from the graph."""
@@ -111,6 +121,8 @@ async def list_entities(
             entity_type=type,
             search=search,
             community_id=community_id,
+            community_level=community_level,
+            sort_by_degree=sort_by_degree,
         )
     except Exception as e:
         logger.exception("Failed to get entities")
@@ -142,6 +154,7 @@ async def list_relationships(
     source_id: Optional[str] = Query(default=None, description="Filter by source entity"),
     target_id: Optional[str] = Query(default=None, description="Filter by target entity"),
     type: Optional[str] = Query(default=None, description="Filter by relationship type"),
+    sort_by_combined_degree: bool = Query(default=True, description="Sort by combined degree (most connected first)"),
     graph_reader: GraphReaderService = Depends(get_graph_reader_service),
 ):
     """Get paginated list of relationships from the graph."""
@@ -153,9 +166,37 @@ async def list_relationships(
             source_id=source_id,
             target_id=target_id,
             relationship_type=type,
+            sort_by_combined_degree=sort_by_combined_degree,
         )
     except Exception as e:
         logger.exception("Failed to get relationships")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RelationshipsForEntitiesRequest(BaseModel):
+    entity_names: list[str]
+    limit: int = 1000
+
+
+@router.post("/relationships/for-entities", response_model=PaginatedRelationshipsResponse)
+async def get_relationships_for_entities(
+    entity_names: list[str] = Body(..., embed=False),
+    limit: int = Body(1000, embed=False),
+    graph_reader: GraphReaderService = Depends(get_graph_reader_service),
+):
+    """Get relationships that connect entities in the provided list.
+
+    Only returns relationships where BOTH source AND target are in the entity_names list.
+    """
+    try:
+        return await asyncio.to_thread(
+            graph_reader.get_relationships,
+            limit=limit,
+            entity_names=entity_names,
+            sort_by_combined_degree=True,
+        )
+    except Exception as e:
+        logger.exception("Failed to get relationships for entities")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -187,4 +228,40 @@ async def get_community(
         raise
     except Exception as e:
         logger.exception("Failed to get community")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/entities/{entity_id}/source-documents", response_model=list[SourceDocumentResponse])
+async def get_entity_source_documents(
+    entity_id: str,
+    graph_reader: GraphReaderService = Depends(get_graph_reader_service),
+):
+    """Get Paperless-NGX documents that mention this entity.
+
+    Returns a list of source documents where the entity appears,
+    with links to view them in Paperless-NGX.
+    """
+    from app.config import get_settings
+
+    try:
+        # First get the entity to find its name
+        entity = await asyncio.to_thread(graph_reader.get_entity, entity_id)
+        if entity is None:
+            raise HTTPException(status_code=404, detail="Entity not found")
+
+        # Get Paperless URL from settings
+        settings = get_settings()
+        paperless_url = settings.paperless_url or ""
+
+        # Get source documents that mention this entity
+        docs = await asyncio.to_thread(
+            graph_reader.get_source_documents_for_entity,
+            entity["name"],
+            paperless_url
+        )
+        return docs
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to get entity source documents")
         raise HTTPException(status_code=500, detail=str(e))
