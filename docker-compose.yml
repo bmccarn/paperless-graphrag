@@ -27,8 +27,11 @@ services:
 
       # Rate limiting (managed via UI settings page)
       # Stored in runtime_settings.json
+
+      # Database for persistent chat history (optional - leave empty for browser-local storage only)
+      - PGRAPH_DATABASE_URL=${DATABASE_URL:-}
     networks:
-      - litellm_litellm_net
+      - ${DOCKER_NETWORK:-default}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
@@ -38,5 +41,6 @@ services:
       start_period: 60s
 
 networks:
-  litellm_litellm_net:
-    external: true
+  default:
+    name: ${DOCKER_NETWORK:-paperless-graphrag-net}
+    external: ${DOCKER_NETWORK_EXTERNAL:-false}

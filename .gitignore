@@ -68,3 +68,5 @@ frontend/next-env.d.ts
 
 # Claude
 .claude/
+data/runtime_settings.json
+backup-to-icloud.sh

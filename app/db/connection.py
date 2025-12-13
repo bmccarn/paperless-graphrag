@@ -6,6 +6,7 @@ from typing import AsyncGenerator, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 
 from app.config import get_settings
 
@@ -134,8 +135,8 @@ async def test_connection() -> dict:
         )
 
         async with test_engine.connect() as conn:
-            result = await conn.execute("SELECT 1")
-            await result.fetchone()
+            result = await conn.execute(text("SELECT 1"))
+            result.fetchone()
 
         await test_engine.dispose()
 

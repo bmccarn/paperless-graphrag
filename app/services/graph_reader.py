@@ -132,7 +132,7 @@ class GraphReaderService:
 
         # Compute degree counts if requested (use parquet degree if available)
         use_parquet_degree = "degree" in df.columns
-        degree_counts = {} if use_parquet_degree else (self._compute_entity_degrees() if include_degree else {})
+        degree_counts = {} if use_parquet_degree else (self._compute_entity_degrees() if (include_degree or sort_by_degree) else {})
 
         # Build entity-to-community mapping from communities parquet
         entity_community_map = self._build_entity_community_map(level=community_level)
@@ -161,9 +161,19 @@ class GraphReaderService:
                 ]
                 df = df[df["id"].astype(str).isin(entity_ids_in_community)]
 
-        # Sort by degree (most connected first) if requested and degree column exists
-        if sort_by_degree and use_parquet_degree:
-            df = df.sort_values("degree", ascending=False)
+        # Sort by degree (most connected first) if requested
+        if sort_by_degree:
+            if use_parquet_degree:
+                df = df.sort_values("degree", ascending=False)
+            elif degree_counts:
+                # Sort using computed degree counts
+                df = df.copy()
+                df["_computed_degree"] = df.apply(
+                    lambda row: degree_counts.get(str(row.get("title", row.get("name", ""))), 0),
+                    axis=1
+                )
+                df = df.sort_values("_computed_degree", ascending=False)
+                df = df.drop(columns=["_computed_degree"])
 
         total = len(df)
 
