@@ -67,7 +67,7 @@ export async function getCommunity(communityId: string): Promise<Community & { e
   return apiClient.get<Community & { entities: Entity[] }>(`/graph/communities/${encodeURIComponent(communityId)}`);
 }
 
-export async function getRelationshipsForEntities(entityNames: string[], limit: number = 1000): Promise<PaginatedResponse<Relationship>> {
+export async function getRelationshipsForEntities(entityNames: string[], limit: number = 5000): Promise<PaginatedResponse<Relationship>> {
   return apiClient.post<PaginatedResponse<Relationship>>('/graph/relationships/for-entities', {
     entity_names: entityNames,
     limit,

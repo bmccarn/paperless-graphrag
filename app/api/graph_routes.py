@@ -103,7 +103,7 @@ async def get_graph_overview(
 
 @router.get("/entities", response_model=PaginatedEntitiesResponse)
 async def list_entities(
-    limit: int = Query(default=100, ge=1, le=1000),
+    limit: int = Query(default=100, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     type: Optional[str] = Query(default=None, description="Filter by entity type"),
     search: Optional[str] = Query(default=None, description="Search in name and description"),
@@ -149,7 +149,7 @@ async def get_entity(
 
 @router.get("/relationships", response_model=PaginatedRelationshipsResponse)
 async def list_relationships(
-    limit: int = Query(default=100, ge=1, le=1000),
+    limit: int = Query(default=100, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     source_id: Optional[str] = Query(default=None, description="Filter by source entity"),
     target_id: Optional[str] = Query(default=None, description="Filter by target entity"),
@@ -175,13 +175,13 @@ async def list_relationships(
 
 class RelationshipsForEntitiesRequest(BaseModel):
     entity_names: list[str]
-    limit: int = 1000
+    limit: int = 5000
 
 
 @router.post("/relationships/for-entities", response_model=PaginatedRelationshipsResponse)
 async def get_relationships_for_entities(
     entity_names: list[str] = Body(..., embed=False),
-    limit: int = Body(1000, embed=False),
+    limit: int = Body(5000, embed=False),
     graph_reader: GraphReaderService = Depends(get_graph_reader_service),
 ):
     """Get relationships that connect entities in the provided list.

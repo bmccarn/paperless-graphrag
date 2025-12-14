@@ -4,7 +4,6 @@ import { Plus, MessageSquare, Trash2, Check, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useChatStore, type ChatSession } from '@/lib/stores/chat-store';
 
@@ -94,9 +93,9 @@ function SessionItem({ session, isActive, onSelect }: SessionItemProps) {
         </p>
       </div>
       <Button
-        variant="ghost"
+        variant="outline"
         size="icon"
-        className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-muted-foreground hover:text-destructive"
+        className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive"
         onClick={handleDelete}
       >
         <Trash2 className="h-3 w-3" />
@@ -135,7 +134,7 @@ export function ChatHistory({ onSelectConversation }: ChatHistoryProps) {
   const displaySessions = isHydrated ? sessions : [];
 
   return (
-    <div className="w-full lg:w-56 flex flex-col h-full">
+    <div className="w-full lg:w-72 flex flex-col h-full overflow-visible">
       <div className="p-2">
         <Button
           variant="ghost"
@@ -148,8 +147,8 @@ export function ChatHistory({ onSelectConversation }: ChatHistoryProps) {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="px-2 pb-2 space-y-0.5">
+      <div className="flex-1 overflow-y-auto">
+        <div className="pl-2 pr-3 pb-2 space-y-0.5">
           {displaySessions.length === 0 ? (
             <p className="text-sm lg:text-xs text-muted-foreground text-center py-8 px-4">
               {isHydrated ? 'Start a conversation' : 'Loading...'}
@@ -165,7 +164,7 @@ export function ChatHistory({ onSelectConversation }: ChatHistoryProps) {
             ))
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

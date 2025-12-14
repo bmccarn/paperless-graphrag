@@ -118,3 +118,14 @@ export async function getRecentMessages(
     `/chat/sessions/${sessionId}/messages/recent?limit=${limit}`
   );
 }
+
+/**
+ * Generate a meaningful chat title from a user message using AI
+ */
+export async function generateChatTitle(message: string): Promise<string> {
+  const response = await apiClient.post<{ title: string }, { message: string }>(
+    '/chat/generate-title',
+    { message }
+  );
+  return response.title;
+}

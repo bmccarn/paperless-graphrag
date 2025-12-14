@@ -511,6 +511,23 @@ class GraphReaderService:
 
         return results
 
+    def _build_doc_hash_to_paperless_map(self, documents_df) -> dict[str, int]:
+        """Build a mapping from document hash IDs to paperless IDs.
+
+        Documents in GraphRAG have titles like 'paperless_384.txt' which contain
+        the paperless document ID.
+        """
+        doc_hash_map = {}
+        if documents_df is not None:
+            for _, row in documents_df.iterrows():
+                doc_hash = row.get("id", "")
+                title = row.get("title", "")
+                # Extract paperless ID from title like 'paperless_384.txt'
+                match = re.search(r"paperless_(\d+)\.txt", title)
+                if match and doc_hash:
+                    doc_hash_map[doc_hash] = int(match.group(1))
+        return doc_hash_map
+
     def get_documents_from_source_ids(
         self, source_ids: list[str], paperless_base_url: str = ""
     ) -> list[dict]:
@@ -530,16 +547,32 @@ class GraphReaderService:
         if text_units_df is None:
             return []
 
+        # Load documents.parquet for hash-to-paperless mapping
+        documents_df = self._read_parquet("documents.parquet")
+        doc_hash_map = self._build_doc_hash_to_paperless_map(documents_df)
+
         paperless_ids = set()
 
         for source_id in source_ids:
             if source_id.isdigit():
                 row_idx = int(source_id)
                 if 0 <= row_idx < len(text_units_df):
-                    text = str(text_units_df.iloc[row_idx].get("text", ""))
+                    row = text_units_df.iloc[row_idx]
+                    text = str(row.get("text", ""))
+
+                    # Method 1: Try extracting document_id from YAML frontmatter in text
                     doc_id = self._extract_paperless_id_from_text(text)
                     if doc_id:
                         paperless_ids.add(doc_id)
+                        continue
+
+                    # Method 2: Use document_ids field to look up via documents.parquet
+                    doc_hashes = row.get("document_ids", [])
+                    if doc_hashes:
+                        for doc_hash in doc_hashes:
+                            paperless_id = doc_hash_map.get(doc_hash)
+                            if paperless_id:
+                                paperless_ids.add(paperless_id)
 
         if not paperless_ids:
             return []
@@ -547,8 +580,7 @@ class GraphReaderService:
         # Load sync state for titles
         sync_state = self._load_sync_state()
 
-        # Also try to get titles from documents.parquet
-        documents_df = self._read_parquet("documents.parquet")
+        # Also try to get titles from documents.parquet text content
         doc_titles = {}
         if documents_df is not None:
             for _, row in documents_df.iterrows():
@@ -593,9 +625,13 @@ class GraphReaderService:
         """
         entities_df = self._read_parquet("entities.parquet")
         text_units_df = self._read_parquet("text_units.parquet")
+        documents_df = self._read_parquet("documents.parquet")
 
         if entities_df is None or text_units_df is None:
             return []
+
+        # Build hash-to-paperless mapping for fallback lookup
+        doc_hash_map = self._build_doc_hash_to_paperless_map(documents_df)
 
         # Get entity names from IDs (row indices)
         entity_names = set()
@@ -616,9 +652,19 @@ class GraphReaderService:
             text = str(row.get("text", "")).lower()
             # Check if any entity name appears in this text unit
             if any(name in text for name in entity_names):
+                # Method 1: Try extracting document_id from YAML frontmatter
                 doc_id = self._extract_paperless_id_from_text(str(row.get("text", "")))
                 if doc_id:
                     paperless_ids.add(doc_id)
+                    continue
+
+                # Method 2: Use document_ids field to look up via documents.parquet
+                doc_hashes = row.get("document_ids", [])
+                if doc_hashes:
+                    for doc_hash in doc_hashes:
+                        paperless_id = doc_hash_map.get(doc_hash)
+                        if paperless_id:
+                            paperless_ids.add(paperless_id)
 
         if not paperless_ids:
             return []
@@ -626,8 +672,7 @@ class GraphReaderService:
         # Load sync state for titles
         sync_state = self._load_sync_state()
 
-        # Also try to get titles from documents.parquet
-        documents_df = self._read_parquet("documents.parquet")
+        # Also try to get titles from documents.parquet text content
         doc_titles = {}
         if documents_df is not None:
             for _, row in documents_df.iterrows():

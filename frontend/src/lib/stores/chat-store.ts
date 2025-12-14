@@ -346,6 +346,13 @@ export const useChatStore = create<ChatState>()(
           timestamp,
         };
 
+        // Get current session to check message count
+        const currentSession = state.sessions.find(s => s.id === state.currentSessionId);
+        const isFirstAssistantResponse = message.role === 'assistant' &&
+          currentSession &&
+          currentSession.messages.length === 1 &&
+          currentSession.messages[0].role === 'user';
+
         set({
           sessions: state.sessions.map(s =>
             s.id === state.currentSessionId
@@ -371,6 +378,28 @@ export const useChatStore = create<ChatState>()(
             });
           } catch (error) {
             console.error('Failed to sync message to database:', error);
+          }
+        }
+
+        // Generate AI title after first assistant response
+        if (isFirstAssistantResponse && currentSession) {
+          const userMessage = currentSession.messages[0].content;
+          try {
+            const title = await chatApi.generateChatTitle(userMessage);
+            // Update session name locally
+            set(prev => ({
+              sessions: prev.sessions.map(s =>
+                s.id === state.currentSessionId
+                  ? { ...s, name: title, updatedAt: new Date() }
+                  : s
+              ),
+            }));
+            // Sync to database if enabled
+            if (state.dbEnabled && state.currentSessionId) {
+              await chatApi.renameSession(state.currentSessionId, title);
+            }
+          } catch (error) {
+            console.error('Failed to generate chat title:', error);
           }
         }
       },

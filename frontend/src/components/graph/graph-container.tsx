@@ -169,7 +169,7 @@ interface GraphData {
 
 const INITIAL_LIMIT = 200;
 const LOAD_MORE_INCREMENT = 100;
-const MAX_LIMIT = 1000;
+const MAX_LIMIT = 3000;
 
 interface GraphContainerProps {
   focusEntityId?: string;

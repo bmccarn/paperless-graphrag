@@ -3,11 +3,13 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+import httpx
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from app.services.chat_history import ChatHistoryService
 from app.db.connection import test_connection, is_db_configured
+from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,16 @@ class AddMessageRequest(BaseModel):
     method: Optional[str] = Field(None, description="Query method used")
     sourceDocuments: Optional[List[dict]] = Field(None, description="Source document references")
     timestamp: Optional[str] = Field(None, description="ISO timestamp")
+
+
+class GenerateTitleRequest(BaseModel):
+    """Request to generate a chat title from user message."""
+    message: str = Field(..., description="User message to generate title from")
+
+
+class GenerateTitleResponse(BaseModel):
+    """Response with generated chat title."""
+    title: str
 
 
 class ChatStatusResponse(BaseModel):
@@ -222,3 +234,67 @@ async def get_recent_messages(session_id: str, limit: int = 6):
 
     messages = await ChatHistoryService.get_recent_messages(session_id, limit)
     return messages
+
+
+@router.post("/generate-title", response_model=GenerateTitleResponse)
+async def generate_chat_title(
+    request: GenerateTitleRequest,
+    settings: Settings = Depends(get_settings),
+):
+    """Generate a meaningful chat title from a user message using AI.
+
+    Uses the configured LLM to create a short, descriptive title
+    based on the user's first message in the conversation.
+    """
+    if not settings.litellm_base_url or not settings.litellm_api_key:
+        # Fallback to truncation if LLM not configured
+        title = request.message[:40].strip()
+        if len(request.message) > 40:
+            title += "..."
+        return GenerateTitleResponse(title=title)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{settings.litellm_base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.litellm_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.query_model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "Generate a very short, descriptive title (3-6 words max) for a chat conversation based on the user's message. Return ONLY the title, no quotes, no punctuation at the end, no explanation."
+                        },
+                        {
+                            "role": "user",
+                            "content": request.message
+                        }
+                    ],
+                    "max_tokens": 30,
+                    "temperature": 0.7,
+                },
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                title = data["choices"][0]["message"]["content"].strip()
+                # Clean up the title - remove quotes if present
+                title = title.strip('"\'')
+                # Limit length just in case
+                if len(title) > 60:
+                    title = title[:57] + "..."
+                return GenerateTitleResponse(title=title)
+            else:
+                logger.warning("LLM title generation failed: %s", response.text)
+
+    except Exception as e:
+        logger.warning("Failed to generate title via LLM: %s", e)
+
+    # Fallback to simple truncation
+    title = request.message[:40].strip()
+    if len(request.message) > 40:
+        title += "..."
+    return GenerateTitleResponse(title=title)

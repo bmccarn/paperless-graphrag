@@ -78,7 +78,7 @@ export default function ChatPage() {
       )}
 
       {/* Desktop Chat History Sidebar */}
-      <div className="hidden lg:flex flex-col bg-muted/30 rounded-lg">
+      <div className="hidden lg:flex flex-col bg-muted/30 rounded-lg overflow-visible">
         <ChatHistory />
       </div>
 
