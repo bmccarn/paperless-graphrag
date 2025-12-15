@@ -18,12 +18,14 @@ Traditional RAG (Retrieval-Augmented Generation) finds relevant document chunks 
 ## Features
 
 ### Core Functionality
+
 - **Automatic Document Sync**: Incremental sync from paperless-ngx with change detection
 - **Knowledge Graph**: Extracts entities and relationships using LLM-powered analysis
 - **Smart Queries**: Natural language queries with multiple search strategies
 - **Streaming Responses**: Real-time SSE streaming of query responses
 
 ### Web Interface
+
 - **Chat Interface**: Conversational queries with session management and source citations
 - **Graph Visualization**: Interactive 3D/2D force-directed graph exploration
 - **Operations Dashboard**: Sync management and real-time task monitoring
@@ -31,6 +33,7 @@ Traditional RAG (Retrieval-Augmented Generation) finds relevant document chunks 
 - **Settings Page**: Live configuration without container restart
 
 ### Data Persistence
+
 - **Chat History**: Optional PostgreSQL backend for cross-device chat persistence
 - **Graph Data**: Parquet-based storage for entities, relationships, and communities
 - **Sync State**: Tracks which documents have been indexed
@@ -65,6 +68,7 @@ The web interface provides:
 ```
 
 ### Components
+
 - **FastAPI Backend**: REST API with async support, SSE streaming, and background task management
 - **Next.js Frontend**: React-based UI with Zustand state management and TailwindCSS
 - **nginx**: Reverse proxy serving frontend static files and proxying API requests
@@ -116,6 +120,7 @@ EMBEDDING_MODEL=text-embedding-3-small
 The container needs to reach your paperless-ngx and LiteLLM services.
 
 **Option A**: Join an existing Docker network (recommended if services share a network)
+
 ```bash
 # In .env:
 DOCKER_NETWORK=your-existing-network-name
@@ -123,11 +128,13 @@ DOCKER_NETWORK_EXTERNAL=true
 ```
 
 **Option B**: Create a new isolated network (default)
+
 ```bash
 # No changes needed - uses default paperless-graphrag-net
 ```
 
 **Option C**: Use host networking (simplest for testing)
+
 ```yaml
 # In docker-compose.yml, add to paperless-graphrag service:
 network_mode: host
@@ -148,7 +155,7 @@ curl http://localhost:8003/health
 
 ### 5. Initial Indexing
 
-Open the web UI at http://localhost:8003 and click "Full Sync" in the Operations panel, or:
+Open the web UI at <http://localhost:8003> and click "Full Sync" in the Operations panel, or:
 
 ```bash
 curl -X POST http://localhost:8003/sync \
@@ -162,9 +169,10 @@ curl -X POST http://localhost:8003/sync \
 
 ### Web Interface
 
-Access the dashboard at http://localhost:8003
+Access the dashboard at <http://localhost:8003>
 
 #### Chat Tab
+
 - Ask natural language questions about your documents
 - Choose search method: Local, Global, DRIFT, or Basic
 - View source document references with direct links to paperless-ngx
@@ -172,6 +180,7 @@ Access the dashboard at http://localhost:8003
 - Chat history persists locally (or in PostgreSQL if configured)
 
 #### Graph Tab
+
 - **3D/2D Toggle**: Switch between immersive 3D view and simpler 2D layout
 - **Search**: Find entities by name or type
 - **Filtering**: Filter by entity type or community
@@ -180,18 +189,21 @@ Access the dashboard at http://localhost:8003
 - **Community View**: See how entities cluster into communities
 
 #### Operations Tab
+
 - **Incremental Sync**: Process only new/modified documents
 - **Full Sync**: Reprocess all documents from scratch
 - **Task Monitoring**: Track progress of running tasks
 - **Statistics**: View document counts and sync status
 
 #### Logs Tab
+
 - **Real-time Streaming**: Live application logs via SSE
 - **Severity Filtering**: Filter by log level (INFO, WARNING, ERROR)
 - **Search**: Search through log messages
 - **Auto-scroll**: Automatically follow new log entries
 
 #### Settings Tab
+
 - **Model Configuration**: Select indexing, query, and embedding models
 - **Rate Limiting**: Configure requests/tokens per minute and concurrency
 - **Chunk Settings**: Adjust chunk size and overlap for document processing
@@ -201,18 +213,21 @@ Access the dashboard at http://localhost:8003
 ### Query Examples
 
 **Local Search** (entity-focused):
+
 - "What is my account number with Chase Bank?"
 - "Show me all documents from State Farm"
 - "What medical procedures did I have in 2023?"
 - "Find invoices from Amazon over $100"
 
 **Global Search** (theme-based):
+
 - "What types of insurance coverage do I have?"
 - "Summarize my financial accounts"
 - "What are the main categories of documents I have?"
 - "What recurring subscriptions am I paying for?"
 
 **DRIFT Search** (complex reasoning):
+
 - "How are my insurance policies connected to my property?"
 - "What's the relationship between my bank accounts and tax documents?"
 - "Trace all documents related to my home purchase"
@@ -260,6 +275,7 @@ DATABASE_URL=postgresql://user:password@host:5432/database
 ```
 
 The application will:
+
 1. Automatically create required tables on startup
 2. Store chat sessions and messages in PostgreSQL
 3. Fall back to browser localStorage if database is unavailable
@@ -302,6 +318,7 @@ The system extracts these entity types optimized for personal document managemen
 | POST | `/query/stream` | Query with SSE streaming response |
 
 **Query Request Body:**
+
 ```json
 {
   "query": "What insurance policies do I have?",
@@ -311,6 +328,7 @@ The system extracts these entity types optimized for personal document managemen
 ```
 
 **Query Methods:**
+
 - `local`: Entity-focused search for specific facts
 - `global`: Theme-based search using community summaries
 - `drift`: Dynamic reasoning for complex multi-hop queries
@@ -324,6 +342,7 @@ The system extracts these entity types optimized for personal document managemen
 | GET | `/documents/stats` | Get sync statistics |
 
 **Sync Request Body:**
+
 ```json
 {
   "full": false  // true for full resync, false for incremental
@@ -343,6 +362,7 @@ The system extracts these entity types optimized for personal document managemen
 | GET | `/graph/for-visualization` | Get graph data formatted for force-graph rendering |
 
 **Entity List Parameters:**
+
 - `limit`: Number of results (default: 50)
 - `offset`: Pagination offset
 - `search`: Filter by name
@@ -380,6 +400,7 @@ The system extracts these entity types optimized for personal document managemen
 | GET | `/api/logs/stream` | SSE stream of real-time logs |
 
 **Logs Parameters:**
+
 - `limit`: Number of log entries (default: 100)
 - `level`: Minimum log level filter
 
@@ -410,6 +431,7 @@ data/
 ### Local Development (without Docker)
 
 **Backend:**
+
 ```bash
 # Create virtual environment
 python -m venv venv
@@ -427,6 +449,7 @@ uvicorn app.main:app --reload --port 8002
 ```
 
 **Frontend:**
+
 ```bash
 cd frontend
 
@@ -497,6 +520,7 @@ paperless-graphrag/
 ### Key Technologies
 
 **Backend:**
+
 - FastAPI (async REST API)
 - SQLAlchemy 2.0 (async ORM)
 - asyncpg (PostgreSQL driver)
@@ -504,6 +528,7 @@ paperless-graphrag/
 - SSE-Starlette (server-sent events)
 
 **Frontend:**
+
 - Next.js 14 (React framework, App Router)
 - TypeScript
 - Zustand (state management)
@@ -516,36 +541,43 @@ paperless-graphrag/
 ### Common Issues
 
 **"Connection refused" to paperless-ngx**
+
 - Verify `PAPERLESS_URL` is reachable from inside the container
 - If using Docker, ensure both containers are on the same network
 - Try using the host IP instead of `localhost` or container name
 
 **API key or authentication errors**
+
 - Verify `PAPERLESS_TOKEN` is correct (test with curl to paperless API)
 - Check `LITELLM_API_KEY` is valid
 - Ensure LiteLLM is configured with your model provider
 
 **Sync stuck at high percentage**
+
 - This is normal for large document sets - the LLM is extracting entities
 - Check logs for actual progress: `docker compose logs -f`
 - Indexing ~230 documents takes 20-40 minutes
 
 **Out of memory during indexing**
+
 - Increase Docker memory limit
 - Reduce `CONCURRENT_REQUESTS` to lower parallel LLM calls
 - Consider indexing in batches
 
 **Frontend shows "Failed to fetch"**
+
 - Backend might still be starting (check health endpoint)
 - CORS issue - ensure accessing via correct port (8003)
 - Check browser console for detailed error
 
 **Database connection errors**
+
 - Verify PostgreSQL is accessible from the container
 - Check `DATABASE_URL` format: `postgresql://user:password@host:5432/database`
 - URL-encode special characters in password (e.g., `@` becomes `%40`)
 
 **Graph visualization not loading**
+
 - Ensure sync has completed and entities exist
 - Check `/graph/overview` endpoint for entity counts
 - Large graphs may take time to render - try 2D mode first

@@ -167,9 +167,9 @@ interface GraphData {
   links: ForceGraphLink[];
 }
 
-const INITIAL_LIMIT = 200;
+const INITIAL_LIMIT = 500;
 const LOAD_MORE_INCREMENT = 100;
-const MAX_LIMIT = 3000;
+const MAX_LIMIT = 10000;
 
 interface GraphContainerProps {
   focusEntityId?: string;
@@ -289,6 +289,11 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
 
   const handleLoadMore = useCallback(() => {
     setLimit((prev) => Math.min(prev + LOAD_MORE_INCREMENT, MAX_LIMIT));
+  }, []);
+
+  const handleSetLimit = useCallback((newLimit: number) => {
+    const clampedLimit = Math.max(INITIAL_LIMIT, Math.min(newLimit, MAX_LIMIT));
+    setLimit(clampedLimit);
   }, []);
 
   const canLoadMore = entities.length >= limit && limit < MAX_LIMIT;
@@ -715,7 +720,10 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
         onReset={handleReset}
         isSearching={isSearching}
         entityCount={entities.length}
+        currentLimit={limit}
+        maxLimit={MAX_LIMIT}
         onLoadMore={handleLoadMore}
+        onSetLimit={handleSetLimit}
         canLoadMore={canLoadMore}
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
