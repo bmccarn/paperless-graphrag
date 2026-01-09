@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Empty turbopack config to silence warning (webpack config still used for build)
+  turbopack: {},
+
   // Enable static export for Docker deployment
   output: "export",
 

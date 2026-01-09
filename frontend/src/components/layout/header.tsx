@@ -11,6 +11,7 @@ import {
   FileText,
   Wrench,
   ScrollText,
+  Sparkles,
   Menu,
   X,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/graph', label: 'Graph', icon: Network },
+  { href: '/ai', label: 'AI Sync', icon: Sparkles },
   { href: '/operations', label: 'Operations', icon: Wrench },
   { href: '/logs', label: 'Logs', icon: ScrollText },
   { href: '/settings', label: 'Settings', icon: Cog },

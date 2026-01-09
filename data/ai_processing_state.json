@@ -1,0 +1,263 @@
+{
+  "jobs": {
+    "1d658623-80e3-44cd-81d8-448443898515": {
+      "job_id": "1d658623-80e3-44cd-81d8-448443898515",
+      "options": {
+        "scope": "selected",
+        "document_ids": [
+          463
+        ],
+        "generate_titles": true,
+        "suggest_tags": true,
+        "suggest_document_type": true,
+        "auto_apply": false,
+        "skip_already_processed": true
+      },
+      "suggestions": {},
+      "status": "pending",
+      "progress_current": 0,
+      "progress_total": 0,
+      "current_document_title": null,
+      "created_at": "2025-12-15T21:09:09.980097",
+      "started_at": null,
+      "completed_at": null,
+      "errors": []
+    },
+    "3e7ddbd8-64f3-486b-a610-94fe0d3adc50": {
+      "job_id": "3e7ddbd8-64f3-486b-a610-94fe0d3adc50",
+      "options": {
+        "scope": "selected",
+        "document_ids": [
+          463
+        ],
+        "generate_titles": true,
+        "suggest_tags": true,
+        "suggest_document_type": true,
+        "auto_apply": false,
+        "skip_already_processed": true
+      },
+      "suggestions": {},
+      "status": "pending",
+      "progress_current": 0,
+      "progress_total": 0,
+      "current_document_title": null,
+      "created_at": "2025-12-15T21:12:15.870234",
+      "started_at": null,
+      "completed_at": null,
+      "errors": []
+    },
+    "71e70337-da61-4d47-8f84-243eeba83107": {
+      "job_id": "71e70337-da61-4d47-8f84-243eeba83107",
+      "options": {
+        "scope": "selected",
+        "document_ids": [
+          463
+        ],
+        "generate_titles": true,
+        "suggest_tags": true,
+        "suggest_document_type": true,
+        "auto_apply": false,
+        "skip_already_processed": true
+      },
+      "suggestions": {},
+      "status": "failed",
+      "progress_current": 0,
+      "progress_total": 0,
+      "current_document_title": null,
+      "created_at": "2025-12-15T21:13:44.779178",
+      "started_at": null,
+      "completed_at": null,
+      "errors": [
+        "'Settings' object has no attribute 'graphrag_root_dir'"
+      ]
+    },
+    "8b8110f9-a5bb-430c-be78-42d829dfca4a": {
+      "job_id": "8b8110f9-a5bb-430c-be78-42d829dfca4a",
+      "options": {
+        "scope": "selected",
+        "document_ids": [
+          463
+        ],
+        "generate_titles": true,
+        "suggest_tags": true,
+        "suggest_document_type": true,
+        "auto_apply": false,
+        "skip_already_processed": true
+      },
+      "suggestions": {
+        "463": {
+          "document_id": 463,
+          "current_title": "Receipt DE1D9435-0021 \u2014 Anthropic \u2014 2025-10-22",
+          "current_tags": [
+            "email",
+            "invoice"
+          ],
+          "current_document_type": "Invoice",
+          "suggested_title": "Anthropic Receipt DE1D9435-0021 - Max Plan 20x - $200.00 - 2025-10-22",
+          "suggested_tags": [
+            {
+              "tag_id": 362,
+              "tag_name": "subscription",
+              "is_new": false,
+              "confidence": 0.9
+            },
+            {
+              "tag_id": 357,
+              "tag_name": "receipt",
+              "is_new": false,
+              "confidence": 0.9
+            },
+            {
+              "tag_id": 361,
+              "tag_name": "payment",
+              "is_new": false,
+              "confidence": 0.85
+            },
+            {
+              "tag_id": 349,
+              "tag_name": "email",
+              "is_new": false,
+              "confidence": 0.843800114600189
+            },
+            {
+              "tag_id": 321,
+              "tag_name": "invoice",
+              "is_new": false,
+              "confidence": 0.843800114600189
+            }
+          ],
+          "suggested_document_type": {
+            "doc_type_id": 61,
+            "doc_type_name": "Receipt",
+            "is_new": false,
+            "confidence": 0.96
+          },
+          "title_status": "applied",
+          "tags_status": "applied",
+          "doc_type_status": "applied",
+          "modified_title": null,
+          "selected_tag_indices": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "additional_tag_ids": null,
+          "rejection_notes": null,
+          "created_at": "2025-12-15T21:14:38.380975",
+          "processed_at": "2025-12-15T21:14:42.598289",
+          "error": null
+        }
+      },
+      "status": "completed",
+      "progress_current": 1,
+      "progress_total": 1,
+      "current_document_title": null,
+      "created_at": "2025-12-15T21:14:35.322007",
+      "started_at": "2025-12-15T21:14:35.872446",
+      "completed_at": "2025-12-15T21:14:42.598338",
+      "errors": []
+    },
+    "e0ed1745-ed4b-4db7-88c0-7e87baaf3873": {
+      "job_id": "e0ed1745-ed4b-4db7-88c0-7e87baaf3873",
+      "options": {
+        "scope": "selected",
+        "document_ids": [
+          462
+        ],
+        "generate_titles": true,
+        "suggest_tags": true,
+        "suggest_document_type": true,
+        "auto_apply": false,
+        "skip_already_processed": true
+      },
+      "suggestions": {
+        "462": {
+          "document_id": 462,
+          "current_title": "Invoice DE1D9435-0021 \u2014 Anthropic",
+          "current_tags": [
+            "email",
+            "invoice"
+          ],
+          "current_document_type": "Invoice",
+          "suggested_title": "Anthropic Invoice DE1D9435-0021 - $200.00 - Oct 22, 2025",
+          "suggested_tags": [
+            {
+              "tag_id": 362,
+              "tag_name": "subscription",
+              "is_new": false,
+              "confidence": 0.95
+            },
+            {
+              "tag_id": 349,
+              "tag_name": "email",
+              "is_new": false,
+              "confidence": 0.8547249655353533
+            },
+            {
+              "tag_id": 321,
+              "tag_name": "invoice",
+              "is_new": false,
+              "confidence": 0.8547249655353533
+            }
+          ],
+          "suggested_document_type": {
+            "doc_type_id": 97,
+            "doc_type_name": "Invoice",
+            "is_new": false,
+            "confidence": 0.99
+          },
+          "title_status": "rejected",
+          "tags_status": "rejected",
+          "doc_type_status": "rejected",
+          "modified_title": null,
+          "selected_tag_indices": [
+            0,
+            1,
+            2
+          ],
+          "additional_tag_ids": null,
+          "rejection_notes": null,
+          "created_at": "2025-12-15T21:19:57.025178",
+          "processed_at": "2025-12-15T21:20:01.699807",
+          "error": null
+        }
+      },
+      "status": "completed",
+      "progress_current": 1,
+      "progress_total": 1,
+      "current_document_title": null,
+      "created_at": "2025-12-15T21:19:53.994754",
+      "started_at": "2025-12-15T21:19:54.758802",
+      "completed_at": "2025-12-15T21:20:01.699860",
+      "errors": []
+    },
+    "03b540fe-2b20-45e8-83ed-24bd8f924700": {
+      "job_id": "03b540fe-2b20-45e8-83ed-24bd8f924700",
+      "options": {
+        "scope": "selected",
+        "document_ids": [],
+        "generate_titles": true,
+        "suggest_tags": true,
+        "suggest_document_type": true,
+        "auto_apply": false,
+        "skip_already_processed": true
+      },
+      "suggestions": {},
+      "status": "completed",
+      "progress_current": 0,
+      "progress_total": 0,
+      "current_document_title": null,
+      "created_at": "2025-12-15T21:22:14.190698",
+      "started_at": "2025-12-15T21:22:14.713860",
+      "completed_at": "2025-12-15T21:22:15.459466",
+      "errors": []
+    }
+  },
+  "pending_suggestions": {},
+  "processed_documents": {
+    "463": "2025-12-15T21:14:42.598289",
+    "462": "2025-12-15T21:20:01.699807"
+  }
+}

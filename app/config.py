@@ -13,7 +13,9 @@ from pydantic_settings import BaseSettings
 logger = logging.getLogger(__name__)
 
 # Path to persisted runtime settings
-RUNTIME_SETTINGS_PATH = Path("/app/data/runtime_settings.json")
+# Use relative path that works for both Docker (/app) and local development
+_project_root = Path(__file__).parent.parent
+RUNTIME_SETTINGS_PATH = Path("/app/data/runtime_settings.json") if Path("/app").exists() else _project_root / "data" / "runtime_settings.json"
 
 
 def load_runtime_settings() -> Dict[str, Any]:
@@ -86,7 +88,7 @@ class Settings(BaseSettings):
 
     # GraphRAG settings
     graphrag_root: str = Field(
-        default="/app/data/graphrag",
+        default=str(Path("/app/data/graphrag") if Path("/app").exists() else _project_root / "data" / "graphrag"),
         description="Root directory for GraphRAG project"
     )
     indexing_method: IndexingMethod = Field(
@@ -106,7 +108,7 @@ class Settings(BaseSettings):
 
     # Sync settings
     sync_state_path: str = Field(
-        default="/app/data/sync_state.json",
+        default=str(Path("/app/data/sync_state.json") if Path("/app").exists() else _project_root / "data" / "sync_state.json"),
         description="Path to sync state file"
     )
 
@@ -175,7 +177,6 @@ class Settings(BaseSettings):
     )
 
     model_config = {
-        "env_prefix": "PGRAPH_",
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "extra": "ignore",
@@ -192,8 +193,10 @@ class Settings(BaseSettings):
 
     @field_validator("paperless_url", "litellm_base_url")
     @classmethod
-    def strip_trailing_slash(cls, v: str) -> str:
+    def strip_trailing_slash(cls, v: Optional[str]) -> Optional[str]:
         """Remove trailing slash from URLs."""
+        if v is None:
+            return None
         return v.rstrip("/")
 
 
@@ -215,7 +218,7 @@ def get_settings() -> Settings:
     merged = {}
     for key, value in runtime.items():
         # Only use runtime value if env var is not set
-        env_key = f"PGRAPH_{key.upper()}"
+        env_key = key.upper()
         if not os.environ.get(env_key) and value is not None:
             merged[key] = value
 

@@ -7,3 +7,4 @@ export * from './graph';
 export * from './settings';
 export * from './logs';
 export * from './chat';
+export * from './ai';

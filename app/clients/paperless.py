@@ -251,3 +251,207 @@ class PaperlessClient:
     def get_document_type(self, dt_id: int) -> Optional[PaperlessDocumentType]:
         """Get a document type from cache by ID."""
         return self._doc_types_cache.get(dt_id)
+
+    def get_all_tags(self) -> List[PaperlessTag]:
+        """Get all tags from cache."""
+        return list(self._tags_cache.values())
+
+    def get_all_document_types(self) -> List[PaperlessDocumentType]:
+        """Get all document types from cache."""
+        return list(self._doc_types_cache.values())
+
+    def get_all_correspondents(self) -> List[PaperlessCorrespondent]:
+        """Get all correspondents from cache."""
+        return list(self._correspondents_cache.values())
+
+    async def refresh_caches(self) -> None:
+        """Refresh all caches (tags, correspondents, document types).
+
+        Call this after creating new tags or document types.
+        """
+        self._tags_cache.clear()
+        self._correspondents_cache.clear()
+        self._doc_types_cache.clear()
+        await self._load_caches()
+
+    # =========================================================================
+    # Write Operations
+    # =========================================================================
+
+    async def update_document(
+        self,
+        doc_id: int,
+        title: Optional[str] = None,
+        tags: Optional[List[int]] = None,
+        document_type: Optional[int] = None,
+    ) -> PaperlessDocument:
+        """Update a document's metadata in paperless-ngx.
+
+        Uses PATCH to only update specified fields.
+
+        Args:
+            doc_id: Document ID to update
+            title: New title (optional)
+            tags: List of tag IDs to set (optional, replaces all tags)
+            document_type: Document type ID to set (optional)
+
+        Returns:
+            Updated PaperlessDocument
+
+        Raises:
+            httpx.HTTPStatusError: If update fails
+        """
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        # Build patch data with only specified fields
+        patch_data = {}
+        if title is not None:
+            patch_data["title"] = title
+        if tags is not None:
+            patch_data["tags"] = tags
+        if document_type is not None:
+            patch_data["document_type"] = document_type
+
+        if not patch_data:
+            # Nothing to update, just return current document
+            return await self.get_document(doc_id)
+
+        logger.info("Updating document %d with: %s", doc_id, patch_data)
+
+        response = await self._client.patch(
+            f"/api/documents/{doc_id}/",
+            json=patch_data,
+        )
+        response.raise_for_status()
+
+        # Return the updated document
+        return await self.get_document(doc_id)
+
+    async def create_tag(
+        self,
+        name: str,
+        color: Optional[str] = None,
+        match: Optional[str] = None,
+        matching_algorithm: Optional[int] = None,
+        is_inbox_tag: bool = False,
+    ) -> PaperlessTag:
+        """Create a new tag in paperless-ngx.
+
+        Args:
+            name: Tag name
+            color: Hex color code (e.g., "#ff0000")
+            match: Text pattern for auto-matching
+            matching_algorithm: Algorithm for auto-matching (0-6)
+            is_inbox_tag: Whether this is an inbox tag
+
+        Returns:
+            Created PaperlessTag
+
+        Raises:
+            httpx.HTTPStatusError: If creation fails
+        """
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        tag_data = {"name": name}
+        if color is not None:
+            tag_data["color"] = color
+        if match is not None:
+            tag_data["match"] = match
+        if matching_algorithm is not None:
+            tag_data["matching_algorithm"] = matching_algorithm
+        if is_inbox_tag:
+            tag_data["is_inbox_tag"] = is_inbox_tag
+
+        logger.info("Creating tag: %s", name)
+
+        response = await self._client.post("/api/tags/", json=tag_data)
+        response.raise_for_status()
+
+        new_tag = PaperlessTag(**response.json())
+
+        # Update cache
+        self._tags_cache[new_tag.id] = new_tag
+
+        return new_tag
+
+    async def create_document_type(
+        self,
+        name: str,
+        match: Optional[str] = None,
+        matching_algorithm: Optional[int] = None,
+    ) -> PaperlessDocumentType:
+        """Create a new document type in paperless-ngx.
+
+        Args:
+            name: Document type name
+            match: Text pattern for auto-matching
+            matching_algorithm: Algorithm for auto-matching (0-6)
+
+        Returns:
+            Created PaperlessDocumentType
+
+        Raises:
+            httpx.HTTPStatusError: If creation fails
+        """
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        doc_type_data = {"name": name}
+        if match is not None:
+            doc_type_data["match"] = match
+        if matching_algorithm is not None:
+            doc_type_data["matching_algorithm"] = matching_algorithm
+
+        logger.info("Creating document type: %s", name)
+
+        response = await self._client.post("/api/document_types/", json=doc_type_data)
+        response.raise_for_status()
+
+        new_doc_type = PaperlessDocumentType(**response.json())
+
+        # Update cache
+        self._doc_types_cache[new_doc_type.id] = new_doc_type
+
+        return new_doc_type
+
+    async def create_correspondent(
+        self,
+        name: str,
+        match: Optional[str] = None,
+        matching_algorithm: Optional[int] = None,
+    ) -> PaperlessCorrespondent:
+        """Create a new correspondent in paperless-ngx.
+
+        Args:
+            name: Correspondent name
+            match: Text pattern for auto-matching
+            matching_algorithm: Algorithm for auto-matching (0-6)
+
+        Returns:
+            Created PaperlessCorrespondent
+
+        Raises:
+            httpx.HTTPStatusError: If creation fails
+        """
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        corr_data = {"name": name}
+        if match is not None:
+            corr_data["match"] = match
+        if matching_algorithm is not None:
+            corr_data["matching_algorithm"] = matching_algorithm
+
+        logger.info("Creating correspondent: %s", name)
+
+        response = await self._client.post("/api/correspondents/", json=corr_data)
+        response.raise_for_status()
+
+        new_corr = PaperlessCorrespondent(**response.json())
+
+        # Update cache
+        self._correspondents_cache[new_corr.id] = new_corr
+
+        return new_corr
