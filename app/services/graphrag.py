@@ -565,6 +565,11 @@ class GraphRAGService:
             "exception",
             "error:",
             "file \"",  # Python traceback file references
+            # Pydantic serialization warnings (don't show in UI but they're logged)
+            "pydantic",
+            "serialization",
+            "unexpected",
+            "expected `",
         ]
         if any(p in line_lower for p in skip_patterns):
             return None
@@ -728,7 +733,11 @@ class GraphRAGService:
                 decoded = line.decode('utf-8', errors='replace').strip()
                 if decoded:
                     stderr_lines.append(decoded)
-                    logger.debug("GraphRAG stderr: %s", decoded)
+                    # Log errors/warnings at INFO level for visibility
+                    if any(p in decoded.lower() for p in ['error', 'exception', 'unexpected', 'pydantic', 'failed']):
+                        logger.warning("GraphRAG stderr (potential issue): %s", decoded[:500])
+                    else:
+                        logger.debug("GraphRAG stderr: %s", decoded)
                     # Parse and queue meaningful events
                     parsed = self._parse_graphrag_log(decoded)
                     if parsed:
