@@ -103,7 +103,7 @@ async def get_graph_overview(
 
 @router.get("/entities", response_model=PaginatedEntitiesResponse)
 async def list_entities(
-    limit: int = Query(default=100, ge=1, le=10000),
+    limit: int = Query(default=100, ge=1, le=100000),
     offset: int = Query(default=0, ge=0),
     type: Optional[str] = Query(default=None, description="Filter by entity type"),
     search: Optional[str] = Query(default=None, description="Search in name and description"),
@@ -149,7 +149,7 @@ async def get_entity(
 
 @router.get("/relationships", response_model=PaginatedRelationshipsResponse)
 async def list_relationships(
-    limit: int = Query(default=100, ge=1, le=10000),
+    limit: int = Query(default=100, ge=1, le=100000),
     offset: int = Query(default=0, ge=0),
     source_id: Optional[str] = Query(default=None, description="Filter by source entity"),
     target_id: Optional[str] = Query(default=None, description="Filter by target entity"),
