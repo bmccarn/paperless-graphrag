@@ -412,6 +412,12 @@ async def query_documents_stream(
                 method=request.method.value,
                 community_level=request.community_level,
             ):
+                # Handle heartbeat events - send SSE comment to keep connection alive
+                # SSE comments (lines starting with :) are ignored by clients but keep proxies happy
+                if event.get("type") == "heartbeat":
+                    yield ": heartbeat\n\n"
+                    continue
+
                 # Return original query in complete event, not the formatted one
                 if event.get("type") == "complete":
                     event["query"] = request.query

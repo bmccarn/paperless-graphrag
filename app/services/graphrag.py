@@ -802,6 +802,10 @@ class GraphRAGService:
         start_time = asyncio.get_event_loop().time()
 
         # Poll for events and completion
+        # Send heartbeats every 15 seconds to keep Cloudflare/proxies alive
+        last_heartbeat = start_time
+        heartbeat_interval = 15.0  # seconds
+
         while not (stdout_task.done() and stderr_task.done() and event_queue.empty()):
             try:
                 # Try to get an event with a short timeout
@@ -813,11 +817,14 @@ class GraphRAGService:
                 if event["message"] != last_message:
                     last_message = event["message"]
                     yield {"type": "thinking", **event}
+                    last_heartbeat = asyncio.get_event_loop().time()
             except asyncio.TimeoutError:
                 # No event from GraphRAG, use time-based stage progression
                 elapsed = asyncio.get_event_loop().time() - start_time
+                current_time = asyncio.get_event_loop().time()
 
                 # Progress through stages based on elapsed time
+                stage_changed = False
                 while (current_stage < len(stages) - 1 and
                        current_stage < len(stage_times) and
                        elapsed >= stage_times[current_stage]):
@@ -826,6 +833,13 @@ class GraphRAGService:
                     if msg != last_message:
                         last_message = msg
                         yield {"type": "thinking", "message": msg, "detail": detail}
+                        last_heartbeat = current_time
+                        stage_changed = True
+
+                # Send heartbeat if no event was sent recently (keeps proxy connections alive)
+                if not stage_changed and (current_time - last_heartbeat) >= heartbeat_interval:
+                    yield {"type": "heartbeat"}
+                    last_heartbeat = current_time
 
         # Ensure both tasks complete
         await stderr_task
