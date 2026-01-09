@@ -23,10 +23,9 @@ from app.db.connection import init_db, close_db
 def setup_logging():
     """Configure logging to both console and file."""
     # Get log directory from environment or use default
-    log_dir = os.environ.get(
-        "PGRAPH_LOG_DIR",
-        "/Users/blake/development/paperless-graphrag/data/graphrag/logs"
-    )
+    # Use /app/data for Docker, fall back to local data dir for development
+    default_log_dir = "/app/data/logs" if Path("/app").exists() else str(Path(__file__).parent.parent / "data" / "logs")
+    log_dir = os.environ.get("PGRAPH_LOG_DIR", default_log_dir)
     log_level = os.environ.get("PGRAPH_LOG_LEVEL", "INFO").upper()
 
     # Create log directory if it doesn't exist

@@ -81,8 +81,8 @@ def get_similar_doc_finder(settings: Settings = Depends(get_settings)) -> Simila
     """Get similar document finder instance."""
     # Determine GraphRAG output directory
     graphrag_output = None
-    if settings.graphrag_root_dir:
-        graphrag_output = Path(settings.graphrag_root_dir) / "output"
+    if settings.graphrag_root:
+        graphrag_output = Path(settings.graphrag_root) / "output"
         if not graphrag_output.exists():
             graphrag_output = None
     return SimilarDocumentFinder(settings, graphrag_output)
