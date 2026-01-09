@@ -826,32 +826,53 @@ class GraphRAGService:
         stdout_text = '\n'.join(stdout_lines).strip()
         stderr_text = '\n'.join(stderr_lines).strip()
 
+        # Log stderr even on success for debugging
+        if stderr_text:
+            logger.debug("GraphRAG stderr output: %s", stderr_text[:2000])
+
         if process.returncode != 0:
-            logger.error("GraphRAG query failed: %s", stderr_text)
+            logger.error("GraphRAG query failed with return code %d: %s", process.returncode, stderr_text)
             yield {"type": "error", "message": f"Query failed: {stderr_text}"}
             return
 
-        # Extract source documents from response
-        source_ids, entity_ids = _extract_source_ids_from_response(stdout_text)
-        source_documents = []
-        graph_reader = GraphReaderService(self.output_dir)
-        paperless_base_url = self.settings.paperless_url
+        # Log successful response length
+        logger.info("GraphRAG query completed, response length: %d chars", len(stdout_text))
 
-        if source_ids:
-            source_documents = graph_reader.get_documents_from_source_ids(
-                source_ids, paperless_base_url
-            )
+        try:
+            # Extract source documents from response
+            source_ids, entity_ids = _extract_source_ids_from_response(stdout_text)
+            source_documents = []
+            graph_reader = GraphReaderService(self.output_dir)
+            paperless_base_url = self.settings.paperless_url
 
-        # If no source documents from Sources, try getting them from entity IDs
-        if not source_documents and entity_ids:
-            source_documents = graph_reader.get_documents_from_entity_ids(
-                entity_ids, paperless_base_url
-            )
+            if source_ids:
+                source_documents = graph_reader.get_documents_from_source_ids(
+                    source_ids, paperless_base_url
+                )
 
-        yield {
-            "type": "complete",
-            "response": stdout_text,
-            "query": query,
-            "method": method,
-            "source_documents": source_documents,
-        }
+            # If no source documents from Sources, try getting them from entity IDs
+            if not source_documents and entity_ids:
+                source_documents = graph_reader.get_documents_from_entity_ids(
+                    entity_ids, paperless_base_url
+                )
+
+            logger.debug("Extracted %d source documents", len(source_documents))
+
+            yield {
+                "type": "complete",
+                "response": stdout_text,
+                "query": query,
+                "method": method,
+                "source_documents": source_documents,
+            }
+        except Exception as e:
+            logger.exception("Error processing GraphRAG response: %s", str(e))
+            # Still return the response even if source extraction failed
+            yield {
+                "type": "complete",
+                "response": stdout_text,
+                "query": query,
+                "method": method,
+                "source_documents": [],
+                "warning": f"Source extraction failed: {str(e)}",
+            }

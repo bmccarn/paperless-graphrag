@@ -415,12 +415,26 @@ async def query_documents_stream(
                 # Return original query in complete event, not the formatted one
                 if event.get("type") == "complete":
                     event["query"] = request.query
-                # Format as SSE
-                event_data = json.dumps(event)
-                yield f"data: {event_data}\n\n"
+                    logger.info("Query complete event received, response length: %d",
+                               len(event.get("response", "")))
+
+                # Log error events
+                if event.get("type") == "error":
+                    logger.error("Query error event: %s", event.get("message", "Unknown error"))
+
+                # Format as SSE with error handling for serialization
+                try:
+                    event_data = json.dumps(event)
+                    yield f"data: {event_data}\n\n"
+                except (TypeError, ValueError) as json_err:
+                    logger.exception("Failed to serialize event to JSON: %s, event type: %s",
+                                   str(json_err), event.get("type"))
+                    # Try to send a simplified error response
+                    error_msg = f"Serialization error: {str(json_err)}"
+                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
 
         except Exception as e:
-            logger.exception("Query stream failed")
+            logger.exception("Query stream failed with exception: %s", str(e))
             error_event = json.dumps({"type": "error", "message": str(e)})
             yield f"data: {error_event}\n\n"
 
