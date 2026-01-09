@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Service started but not fully configured!")
         logger.warning("Please configure required settings via /settings endpoint or environment variables")
-        logger.warning("Required: PGRAPH_PAPERLESS_URL, PGRAPH_PAPERLESS_TOKEN, PGRAPH_LITELLM_API_KEY")
+        logger.warning("Required: PAPERLESS_URL, PAPERLESS_TOKEN, LITELLM_API_KEY")
 
     yield
 

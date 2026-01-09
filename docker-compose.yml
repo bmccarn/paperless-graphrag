@@ -9,18 +9,18 @@ services:
       - ./data:/app/data
     environment:
       # Paperless-ngx connection
-      - PGRAPH_PAPERLESS_URL=${PAPERLESS_URL:-http://paperless:8000}
-      - PGRAPH_PAPERLESS_TOKEN=${PAPERLESS_TOKEN}
+      - PAPERLESS_URL=${PAPERLESS_URL:-http://paperless:8000}
+      - PAPERLESS_TOKEN=${PAPERLESS_TOKEN}
 
       # LiteLLM connection
-      - PGRAPH_LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm:4000}
-      - PGRAPH_LITELLM_API_KEY=${LITELLM_API_KEY}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm:4000}
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
 
       # Model selection is managed via UI settings page (runtime_settings.json)
       # Only set these if you want to override UI-managed settings:
-      # - PGRAPH_INDEXING_MODEL=${INDEXING_MODEL}
-      # - PGRAPH_QUERY_MODEL=${QUERY_MODEL}
-      # - PGRAPH_EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      # - INDEXING_MODEL=${INDEXING_MODEL}
+      # - QUERY_MODEL=${QUERY_MODEL}
+      # - EMBEDDING_MODEL=${EMBEDDING_MODEL}
 
       # GraphRAG settings (managed via UI settings page)
       # Chunk size/overlap are stored in runtime_settings.json
@@ -28,8 +28,8 @@ services:
       # Rate limiting (managed via UI settings page)
       # Stored in runtime_settings.json
 
-      # Database for persistent chat history (optional - leave empty for browser-local storage only)
-      - PGRAPH_DATABASE_URL=${DATABASE_URL:-}
+      # Database for persistent chat history and AI processing
+      - DATABASE_URL=${DATABASE_URL:-}
     networks:
       - app_network
     restart: unless-stopped
