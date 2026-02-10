@@ -9,8 +9,8 @@ pydantic-settings>=2.1.0
 # Async HTTP client
 httpx>=0.26.0
 
-# GraphRAG (2.6+ required for new config format)
-graphrag>=2.6.0
+# GraphRAG (pinned to 3.0.x for compatibility)
+graphrag~=3.0.1
 
 # YAML parsing
 pyyaml>=6.0
