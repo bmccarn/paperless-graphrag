@@ -353,6 +353,18 @@ class GraphReaderService:
         if df is None:
             return {"items": [], "total": 0, "has_more": False}
 
+        # Load community reports for summary/full_content (v3 stores these separately)
+        reports_df = self._read_parquet("community_reports.parquet")
+        reports_map = {}
+        if reports_df is not None:
+            for _, rrow in reports_df.iterrows():
+                cid = str(rrow.get("community", rrow.get("id", "")))
+                lvl = int(rrow.get("level", 0))
+                reports_map[(cid, lvl)] = {
+                    "summary": str(rrow.get("summary", "")),
+                    "full_content": str(rrow.get("full_content", "")),
+                }
+
         # Apply level filter
         if level is not None and "level" in df.columns:
             df = df[df["level"] == level]
@@ -362,11 +374,14 @@ class GraphReaderService:
         # Convert to dict
         communities = []
         for _, row in df.iterrows():
+            community_id = str(row.get("community", row.get("id", "")))
+            lvl = int(row.get("level", 0))
+            report = reports_map.get((community_id, lvl), {})
             communities.append({
-                "id": str(row.get("id", row.get("community", ""))),
-                "level": int(row.get("level", 0)),
-                "title": str(row.get("title", f"Community {row.get('id', '')}")),
-                "summary": str(row.get("summary", row.get("full_content", ""))),
+                "id": str(row.get("id", community_id)),
+                "level": lvl,
+                "title": str(row.get("title", f"Community {community_id}")),
+                "summary": report.get("summary", str(row.get("summary", row.get("full_content", "")))),
                 "entity_count": int(row.get("size", 0)),
             })
 
@@ -399,11 +414,25 @@ class GraphReaderService:
         if community_row is None:
             return None
 
+        # Get summary from community_reports.parquet (v3 stores these separately)
+        summary = str(community_row.get("summary", community_row.get("full_content", "")))
+        reports_df = self._read_parquet("community_reports.parquet")
+        if reports_df is not None:
+            comm_num = str(community_row.get("community", community_id))
+            lvl = int(community_row.get("level", 0))
+            report_matches = reports_df[
+                (reports_df["community"].astype(str) == comm_num) &
+                (reports_df["level"] == lvl)
+            ] if "community" in reports_df.columns and "level" in reports_df.columns else pd.DataFrame()
+            if not report_matches.empty:
+                report_row = report_matches.iloc[0]
+                summary = str(report_row.get("summary", report_row.get("full_content", summary)))
+
         community = {
             "id": str(community_row.get("id", community_row.get("community", ""))),
             "level": int(community_row.get("level", 0)),
             "title": str(community_row.get("title", f"Community {community_id}")),
-            "summary": str(community_row.get("summary", community_row.get("full_content", ""))),
+            "summary": summary,
             "entity_count": int(community_row.get("size", 0)),
             "entities": [],
         }
@@ -566,13 +595,20 @@ class GraphReaderService:
                         paperless_ids.add(doc_id)
                         continue
 
-                    # Method 2: Use document_ids field to look up via documents.parquet
-                    doc_hashes = row.get("document_ids", [])
-                    if doc_hashes:
-                        for doc_hash in doc_hashes:
+                    # Method 2: Use document_id field to look up via documents.parquet
+                    # v3 uses singular document_id (string), v2 used document_ids (list)
+                    doc_hash = row.get("document_id", row.get("document_ids", None))
+                    if doc_hash is not None:
+                        # Handle both single string (v3) and list (v2) formats
+                        if isinstance(doc_hash, str):
                             paperless_id = doc_hash_map.get(doc_hash)
                             if paperless_id:
                                 paperless_ids.add(paperless_id)
+                        elif hasattr(doc_hash, '__iter__'):
+                            for h in doc_hash:
+                                paperless_id = doc_hash_map.get(h)
+                                if paperless_id:
+                                    paperless_ids.add(paperless_id)
 
         if not paperless_ids:
             return []
@@ -658,13 +694,19 @@ class GraphReaderService:
                     paperless_ids.add(doc_id)
                     continue
 
-                # Method 2: Use document_ids field to look up via documents.parquet
-                doc_hashes = row.get("document_ids", [])
-                if doc_hashes:
-                    for doc_hash in doc_hashes:
+                # Method 2: Use document_id field to look up via documents.parquet
+                # v3 uses singular document_id (string), v2 used document_ids (list)
+                doc_hash = row.get("document_id", row.get("document_ids", None))
+                if doc_hash is not None:
+                    if isinstance(doc_hash, str):
                         paperless_id = doc_hash_map.get(doc_hash)
                         if paperless_id:
                             paperless_ids.add(paperless_id)
+                    elif hasattr(doc_hash, '__iter__'):
+                        for h in doc_hash:
+                            paperless_id = doc_hash_map.get(h)
+                            if paperless_id:
+                                paperless_ids.add(paperless_id)
 
         if not paperless_ids:
             return []
