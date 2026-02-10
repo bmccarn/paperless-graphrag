@@ -169,7 +169,7 @@ def _find_merge_candidates(
                 elif _levenshtein_ratio(norm_a, norm_b) >= 0.85:
                     # High fuzzy similarity (handles typos, minor variations)
                     pass
-                elif _token_overlap_ratio(name_a, name_b) >= 0.6 and entity_type == "person":
+                elif _token_overlap_ratio(name_a, name_b) >= 0.6 and entity_type.upper() == "PERSON":
                     # Partial token overlap for person names
                     # Additional check: must share at least one relationship
                     shared_rels = entity_relationships.get(name_a, set()) & entity_relationships.get(name_b, set())
@@ -227,7 +227,7 @@ def _apply_merges(
         merge_map[merge_id] = ultimate_keep
         # Also update any existing entries that pointed to keep_id
         for k, v in merge_map.items():
-            if v == keep_id:
+            if v == keep_id or v == merge_id:
                 merge_map[k] = ultimate_keep
 
     entities_df = entities_df.copy()
