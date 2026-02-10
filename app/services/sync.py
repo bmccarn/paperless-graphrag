@@ -11,6 +11,7 @@ from app.clients.paperless import PaperlessClient
 from app.config import Settings
 from app.models.document import GraphRAGDocument
 from app.models.sync_state import SyncState, DocumentSyncRecord, compute_content_hash
+from app.services.entity_resolution import resolve_entities
 from app.services.graphrag import GraphRAGService, ProgressCallback
 
 logger = logging.getLogger(__name__)
@@ -405,6 +406,34 @@ class SyncService:
                 update=use_update,
                 progress_callback=progress_callback,
             )
+
+            # Run post-indexing entity resolution
+            if progress_callback:
+                progress_callback(97, "Resolving entities", "Deduplicating similar entities...")
+
+            try:
+                resolution_result = await asyncio.to_thread(
+                    resolve_entities, graphrag.output_dir
+                )
+                index_result["entity_resolution"] = resolution_result
+                if resolution_result.get("merges", 0) > 0:
+                    logger.info(
+                        "Entity resolution merged %d entities",
+                        resolution_result["merges"],
+                    )
+                    if progress_callback:
+                        progress_callback(
+                            99,
+                            "Entity resolution complete",
+                            f"Merged {resolution_result['merges']} duplicate entities",
+                        )
+            except Exception as e:
+                logger.warning("Entity resolution failed (non-fatal): %s", e)
+                index_result["entity_resolution"] = {
+                    "status": "failed",
+                    "error": str(e),
+                }
+
             self.state.index_version += 1
             await self.save_state()
         except Exception as e:

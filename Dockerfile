@@ -36,6 +36,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 
+# Copy custom prompts
+COPY prompts/ ./prompts/
+
 # Copy frontend build from builder stage
 COPY --from=frontend-builder /frontend/out /usr/share/nginx/html
 

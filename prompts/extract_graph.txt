@@ -1,0 +1,119 @@
+
+-Goal-
+Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text and all relationships among the identified entities.
+
+IMPORTANT — Entity Name Normalization Rules:
+- Always use the FULLEST, most complete form of a name found anywhere in the document.
+- Person names: If the document mentions "Blake T McCarn" and later refers to "Blake" or "McCarn", use "BLAKE T MCCARN" as the entity name for ALL references that clearly refer to that person.
+- Organization names: Use the full official name. If "Internal Revenue Service" appears, use that instead of "IRS" (but note the abbreviation in the description).
+- All entity names must be UPPERCASED.
+- When a short name (e.g., a last name like "MCCARN") is AMBIGUOUS — meaning multiple people in the document share that name — do NOT resolve it to a specific person. Instead, use the short form as-is (e.g., "MCCARN") and note the ambiguity in the entity description.
+- When a short name clearly refers to only one person based on context, resolve it to that person's full name.
+- Apply the same normalization logic to organizations, addresses, and all other entity types.
+
+-Steps-
+1. Identify all entities. For each identified entity, extract the following information:
+- entity_name: Name of the entity, UPPERCASED, using the fullest canonical form (see normalization rules above)
+- entity_type: One of the following types: [{entity_types}]
+- entity_description: Comprehensive description of the entity's attributes and activities
+Format each entity as ("entity"<|><entity_name><|><entity_type><|><entity_description>)
+
+2. From the entities identified in step 1, identify all pairs of (source_entity, target_entity) that are *clearly related* to each other.
+For each pair of related entities, extract the following information:
+- source_entity: name of the source entity, as identified in step 1
+- target_entity: name of the target entity, as identified in step 1
+- relationship_description: explanation as to why you think the source entity and the target entity are related to each other
+- relationship_strength: a numeric score indicating strength of the relationship between the source entity and target entity
+ Format each relationship as ("relationship"<|><source_entity><|><target_entity><|><relationship_description><|><relationship_strength>)
+
+3. Return output in English as a single list of all the entities and relationships identified in steps 1 and 2. Use **##** as the list delimiter.
+
+4. When finished, output <|COMPLETE|>
+
+######################
+-Examples-
+######################
+Example 1:
+Entity_types: ORGANIZATION,PERSON
+Text:
+The Verdantis's Central Institution is scheduled to meet on Monday and Thursday, with the institution planning to release its latest policy decision on Thursday at 1:30 p.m. PDT, followed by a press conference where Central Institution Chair Martin Smith will take questions. Investors expect the Market Strategy Committee to hold its benchmark interest rate steady in a range of 3.5%-3.75%.
+######################
+Output:
+("entity"<|>CENTRAL INSTITUTION<|>ORGANIZATION<|>The Central Institution is the Federal Reserve of Verdantis, which is setting interest rates on Monday and Thursday)
+##
+("entity"<|>MARTIN SMITH<|>PERSON<|>Martin Smith is the chair of the Central Institution)
+##
+("entity"<|>MARKET STRATEGY COMMITTEE<|>ORGANIZATION<|>The Central Institution committee makes key decisions about interest rates and the growth of Verdantis's money supply)
+##
+("relationship"<|>MARTIN SMITH<|>CENTRAL INSTITUTION<|>Martin Smith is the Chair of the Central Institution and will answer questions at a press conference<|>9)
+<|COMPLETE|>
+
+######################
+Example 2:
+Entity_types: PERSON,ORGANIZATION,TAX FORM
+Text:
+The 2023 Form 1040 for Blake T McCarn shows adjusted gross income of $125,000. McCarn's W-2 from Acme Corp indicates wages of $110,000. His wife Chelsea McCarn is listed as a dependent. Chelsea works part-time at Baker LLC. The return was prepared by James Wilson, CPA.
+######################
+Output:
+("entity"<|>BLAKE T MCCARN<|>PERSON<|>Blake T McCarn is a taxpayer who filed a 2023 Form 1040 with adjusted gross income of $125,000 and wages of $110,000 from Acme Corp)
+##
+("entity"<|>CHELSEA MCCARN<|>PERSON<|>Chelsea McCarn is the wife of Blake T McCarn, listed as a dependent on the 2023 tax return, and works part-time at Baker LLC)
+##
+("entity"<|>JAMES WILSON<|>PERSON<|>James Wilson is a CPA who prepared the McCarn tax return)
+##
+("entity"<|>ACME CORP<|>ORGANIZATION<|>Acme Corp is Blake T McCarn's employer, issuing a W-2 with $110,000 in wages)
+##
+("entity"<|>BAKER LLC<|>ORGANIZATION<|>Baker LLC is the part-time employer of Chelsea McCarn)
+##
+("entity"<|>FORM 1040<|>TAX FORM<|>2023 Form 1040 federal income tax return filed by Blake T McCarn)
+##
+("entity"<|>W-2<|>TAX FORM<|>W-2 wage and tax statement issued by Acme Corp to Blake T McCarn for 2023)
+##
+("relationship"<|>BLAKE T MCCARN<|>CHELSEA MCCARN<|>Chelsea McCarn is the wife of Blake T McCarn and is listed as a dependent on his tax return<|>9)
+##
+("relationship"<|>BLAKE T MCCARN<|>ACME CORP<|>Blake T McCarn received W-2 wages from Acme Corp<|>8)
+##
+("relationship"<|>CHELSEA MCCARN<|>BAKER LLC<|>Chelsea McCarn works part-time at Baker LLC<|>7)
+##
+("relationship"<|>BLAKE T MCCARN<|>FORM 1040<|>Blake T McCarn filed the 2023 Form 1040<|>9)
+##
+("relationship"<|>JAMES WILSON<|>BLAKE T MCCARN<|>James Wilson prepared the tax return for Blake T McCarn<|>8)
+##
+("relationship"<|>BLAKE T MCCARN<|>W-2<|>Blake T McCarn received a W-2 from Acme Corp<|>8)
+<|COMPLETE|>
+
+######################
+Example 3:
+Entity_types: PERSON,ORGANIZATION
+Text:
+Five Aurelians jailed for 8 years in Firuzabad and widely regarded as hostages are on their way home to Aurelia.
+
+The swap orchestrated by Quintara was finalized when $8bn of Firuzi funds were transferred to financial institutions in Krohaara, the capital of Quintara.
+
+The exchange initiated in Firuzabad's capital, Tiruzia, led to the four men and one woman, who are also Firuzi nationals, boarding a chartered flight to Krohaara.
+
+They were welcomed by senior Aurelian officials and are now on their way to Aurelia's capital, Cashion.
+
+The Aurelians include 39-year-old businessman Samuel Namara, who has been held in Tiruzia's Alhamia Prison, as well as journalist Durke Bataglani, 59, and environmentalist Meggie Tazbah, 53, who also holds Bratinas nationality.
+######################
+Output:
+("entity"<|>SAMUEL NAMARA<|>PERSON<|>Samuel Namara is a 39-year-old Aurelian businessman who was held in Tiruzia's Alhamia Prison)
+##
+("entity"<|>DURKE BATAGLANI<|>PERSON<|>Durke Bataglani is a 59-year-old Aurelian journalist who was held hostage)
+##
+("entity"<|>MEGGIE TAZBAH<|>PERSON<|>Meggie Tazbah is a 53-year-old environmentalist with Bratinas nationality who was held hostage)
+##
+("relationship"<|>SAMUEL NAMARA<|>DURKE BATAGLANI<|>Samuel Namara and Durke Bataglani were exchanged in the same hostage release<|>2)
+##
+("relationship"<|>SAMUEL NAMARA<|>MEGGIE TAZBAH<|>Samuel Namara and Meggie Tazbah were exchanged in the same hostage release<|>2)
+##
+("relationship"<|>MEGGIE TAZBAH<|>DURKE BATAGLANI<|>Meggie Tazbah and Durke Bataglani were exchanged in the same hostage release<|>2)
+<|COMPLETE|>
+
+######################
+-Real Data-
+######################
+Entity_types: {entity_types}
+Text: {input_text}
+######################
+Output:

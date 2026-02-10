@@ -98,6 +98,9 @@ class GraphRAGService:
         env_path = self.root / ".env"
         await self._generate_env(env_path)
 
+        # Copy custom prompts to GraphRAG project
+        await self._install_prompts()
+
         logger.info("GraphRAG project initialized at %s", self.root)
 
     async def _generate_settings(self, settings_path: Path) -> None:
@@ -253,6 +256,23 @@ class GraphRAGService:
             yaml.dump(settings_config, f, default_flow_style=False, sort_keys=False)
 
         logger.info("Generated GraphRAG settings at %s", settings_path)
+
+    async def _install_prompts(self) -> None:
+        """Copy custom prompt files to the GraphRAG project prompts directory."""
+        prompts_dir = self.root / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Look for prompt files in the application's prompts directory
+        # In Docker: /app/prompts/, local dev: <project_root>/prompts/
+        app_prompts_dir = Path("/app/prompts") if Path("/app/prompts").exists() else Path(__file__).parent.parent.parent / "prompts"
+
+        if app_prompts_dir.exists():
+            for prompt_file in app_prompts_dir.glob("*.txt"):
+                dest = prompts_dir / prompt_file.name
+                dest.write_text(prompt_file.read_text(encoding="utf-8"), encoding="utf-8")
+                logger.debug("Installed prompt: %s", prompt_file.name)
+        else:
+            logger.debug("No custom prompts directory found at %s", app_prompts_dir)
 
     async def _generate_env(self, env_path: Path) -> None:
         """Generate .env file for GraphRAG."""
