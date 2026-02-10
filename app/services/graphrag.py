@@ -106,62 +106,74 @@ class GraphRAGService:
     async def _generate_settings(self, settings_path: Path) -> None:
         """Generate GraphRAG settings.yaml with LiteLLM configuration."""
         settings_config = {
-            "models": {
-                "default_chat_model": {
-                    # Used for indexing (entity extraction, summarization, etc.)
-                    "type": "chat",
-                    "auth_type": "api_key",
-                    "api_key": "${GRAPHRAG_API_KEY}",
+            # GraphRAG v3 config format
+            "completion_models": {
+                "default_completion_model": {
                     "model_provider": "openai",
                     "model": self.settings.indexing_model,
-                    "api_base": self.settings.litellm_base_url,
-                    "requests_per_minute": self.settings.requests_per_minute,
-                    "tokens_per_minute": self.settings.tokens_per_minute,
-                    "concurrent_requests": self.settings.concurrent_requests,
-                    "request_timeout": 600,  # 10 minutes for large text units
-                },
-                "query_chat_model": {
-                    # Used for search queries (local, global, drift)
-                    "type": "chat",
-                    "auth_type": "api_key",
+                    "auth_method": "api_key",
                     "api_key": "${GRAPHRAG_API_KEY}",
-                    "model_provider": "openai",
-                    "model": self.settings.query_model,
                     "api_base": self.settings.litellm_base_url,
                     "requests_per_minute": self.settings.requests_per_minute,
                     "tokens_per_minute": self.settings.tokens_per_minute,
                     "concurrent_requests": self.settings.concurrent_requests,
                     "request_timeout": 600,
                 },
-                "default_embedding_model": {
-                    # Used for embeddings (both indexing and queries)
-                    "type": "embedding",
-                    "auth_type": "api_key",
+                "query_completion_model": {
+                    "model_provider": "openai",
+                    "model": self.settings.query_model,
+                    "auth_method": "api_key",
                     "api_key": "${GRAPHRAG_API_KEY}",
+                    "api_base": self.settings.litellm_base_url,
+                    "requests_per_minute": self.settings.requests_per_minute,
+                    "tokens_per_minute": self.settings.tokens_per_minute,
+                    "concurrent_requests": self.settings.concurrent_requests,
+                    "request_timeout": 600,
+                },
+            },
+            "embedding_models": {
+                "default_embedding_model": {
                     "model_provider": "openai",
                     "model": self.settings.embedding_model,
+                    "auth_method": "api_key",
+                    "api_key": "${GRAPHRAG_API_KEY}",
                     "api_base": self.settings.litellm_base_url,
                 },
             },
             "input": {
                 "type": "text",
-                "base_dir": "input",
-                "file_pattern": ".*\\.txt$$",  # $$ escapes $ for GraphRAG's Template parser
+                "file_pattern": ".*\\.txt$$",
             },
-            "storage": {
+            "input_storage": {
+                "type": "file",
+                "base_dir": "input",
+            },
+            "output_storage": {
                 "type": "file",
                 "base_dir": "output",
             },
             "cache": {
                 "type": "json",
-                "base_dir": "cache",
+                "storage": {
+                    "type": "file",
+                    "base_dir": "cache",
+                },
             },
-            "chunks": {
+            "vector_store": {
+                "type": "lancedb",
+                "db_uri": "output/lancedb",
+            },
+            "chunking": {
+                "type": "tokens",
                 "size": self.settings.chunk_size,
                 "overlap": self.settings.chunk_overlap,
-                "prepend_metadata": True,
+                "prepend_metadata": ["document_title"],
+            },
+            "embed_text": {
+                "embedding_model_id": "default_embedding_model",
             },
             "extract_graph": {
+                "completion_model_id": "default_completion_model",
                 "prompt": "prompts/extract_graph.txt",
                 "entity_types": [
                     "organization",
@@ -186,32 +198,33 @@ class GraphRAGService:
                 "max_gleanings": 2,
             },
             "summarize_descriptions": {
+                "completion_model_id": "default_completion_model",
                 "prompt": "prompts/summarize_descriptions.txt",
                 "max_length": 500,
             },
             "community_reports": {
-                "prompt": "prompts/community_report_graph.txt",
+                "completion_model_id": "default_completion_model",
+                "graph_prompt": "prompts/community_report_graph.txt",
                 "max_length": 2000,
             },
             "local_search": {
-                "chat_model_id": "query_chat_model",
+                "completion_model_id": "query_completion_model",
+                "embedding_model_id": "default_embedding_model",
                 "text_unit_prop": self.settings.text_unit_prop,
                 "community_prop": 0.1,
                 "top_k_entities": self.settings.top_k_entities,
                 "top_k_relationships": self.settings.top_k_relationships,
-                "max_tokens": self.settings.max_tokens,
+                "max_context_tokens": self.settings.max_tokens,
             },
             "global_search": {
-                "chat_model_id": "query_chat_model",
-                "max_tokens": self.settings.max_tokens,
-                "dynamic_community_selection": {
-                    "enabled": True,
-                    "max_communities": 50,
-                },
-                "concurrent_coroutines": 32,
+                "completion_model_id": "query_completion_model",
+                "max_context_tokens": self.settings.max_tokens,
+                "dynamic_search_threshold": 1,
+                "dynamic_search_max_level": 3,
             },
             "drift_search": {
-                "chat_model_id": "query_chat_model",
+                "completion_model_id": "query_completion_model",
+                "embedding_model_id": "default_embedding_model",
                 "data_max_tokens": min(64000, self.settings.max_tokens // 2),
                 "concurrency": 10,
                 "drift_k_followups": 5,
@@ -225,6 +238,7 @@ class GraphRAGService:
             },
             "extract_claims": {
                 "enabled": True,
+                "completion_model_id": "default_completion_model",
                 "description": "Claims about financial obligations, policy coverages, insurance benefits, legal agreements, tax liabilities, medical coverage, certification requirements, or regulatory compliance",
                 "max_gleanings": 2,
             },
