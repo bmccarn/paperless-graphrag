@@ -165,6 +165,8 @@ interface ForceGraphLink {
 interface GraphData {
   nodes: ForceGraphNode[];
   links: ForceGraphLink[];
+  totalNodes: number;
+  hiddenCount: number;
 }
 
 const INITIAL_LIMIT = 500;
@@ -258,6 +260,8 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
     is3DMode,
     sizeBy,
     colorBy,
+    hideIsolatedNodes,
+    minDegree,
     selectNode,
     setHoveredNode,
   } = useGraphStore();
@@ -356,8 +360,33 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
         };
       });
 
-    return { nodes, links };
-  }, [entities, relationships, sizeBy, colorBy]);
+    // Compute actual degree from links
+    const degreeMap = new Map<string, number>();
+    links.forEach((link) => {
+      const s = typeof link.source === 'string' ? link.source : link.source;
+      const t = typeof link.target === 'string' ? link.target : link.target;
+      degreeMap.set(s, (degreeMap.get(s) || 0) + 1);
+      degreeMap.set(t, (degreeMap.get(t) || 0) + 1);
+    });
+
+    // Filter nodes based on hideIsolatedNodes and minDegree
+    const filteredNodes = nodes.filter((node) => {
+      const actualDegree = degreeMap.get(node.id) || 0;
+      if (hideIsolatedNodes && actualDegree === 0) return false;
+      if (minDegree > 0 && actualDegree < minDegree) return false;
+      return true;
+    });
+
+    // Filter links to only include those between visible nodes
+    const visibleNodeIds = new Set(filteredNodes.map((n) => n.id));
+    const filteredLinks = links.filter((link) => {
+      const s = typeof link.source === 'string' ? link.source : link.source;
+      const t = typeof link.target === 'string' ? link.target : link.target;
+      return visibleNodeIds.has(s) && visibleNodeIds.has(t);
+    });
+
+    return { nodes: filteredNodes, links: filteredLinks, totalNodes: nodes.length, hiddenCount: nodes.length - filteredNodes.length };
+  }, [entities, relationships, sizeBy, colorBy, hideIsolatedNodes, minDegree]);
 
   // Handle node click - select and focus camera
   const handleNodeClick = useCallback(
@@ -644,6 +673,22 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
             ${node.description ? `<small style="opacity: 0.6">${node.description.substring(0, 100)}${node.description.length > 100 ? '...' : ''}</small>` : ''}
           </div>`
         }
+        linkLabel={(link: any) =>
+          `<div style="padding: 6px 10px; background: rgba(0,0,0,0.9); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+            <strong style="color: #fff; font-size: 12px;">${link.type || 'RELATED'}</strong>
+            ${link.description ? `<br/><small style="opacity: 0.6">${link.description.substring(0, 100)}${link.description.length > 100 ? '...' : ''}</small>` : ''}
+          </div>`
+        }
+        linkDirectionalArrowLength={4}
+        linkDirectionalArrowRelPos={1}
+        linkDirectionalArrowColor={(link: any) => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          const linkKey = `${sourceId}-${targetId}`;
+          if (highlightLinks.size === 0) return 'rgba(255,255,255,0.4)';
+          if (highlightLinks.has(linkKey)) return 'rgba(255,255,255,0.9)';
+          return 'rgba(255,255,255,0.08)';
+        }}
         nodeColor={(node: any) => node.color}
         nodeVal={(node: any) => node.val}
         nodeRelSize={6}
@@ -729,6 +774,7 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
         onToggleFullscreen={toggleFullscreen}
         onResetView={handleResetView}
         portalContainer={containerRef.current}
+        hiddenNodeCount={graphData.hiddenCount}
       />
       <GraphLegend />
       <GraphSidebar

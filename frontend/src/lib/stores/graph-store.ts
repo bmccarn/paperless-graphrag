@@ -26,6 +26,10 @@ interface GraphState {
   filters: GraphFilters;
   isLoading: boolean;
 
+  // Node filtering
+  hideIsolatedNodes: boolean;
+  minDegree: number;
+
   // Actions
   selectNode: (id: string | null) => void;
   setHoveredNode: (id: string | null) => void;
@@ -36,6 +40,8 @@ interface GraphState {
   setFilters: (filters: Partial<GraphFilters>) => void;
   resetFilters: () => void;
   setLoading: (loading: boolean) => void;
+  setHideIsolatedNodes: (hide: boolean) => void;
+  setMinDegree: (degree: number) => void;
 }
 
 const defaultFilters: GraphFilters = {
@@ -53,6 +59,8 @@ export const useGraphStore = create<GraphState>((set) => ({
   sizeBy: 'degree',
   filters: defaultFilters,
   isLoading: false,
+  hideIsolatedNodes: true,
+  minDegree: 0,
 
   // Actions
   selectNode: (id) => set({ selectedNodeId: id }),
@@ -65,6 +73,8 @@ export const useGraphStore = create<GraphState>((set) => ({
     set((state) => ({
       filters: { ...state.filters, ...filters },
     })),
-  resetFilters: () => set({ filters: defaultFilters }),
+  resetFilters: () => set({ filters: defaultFilters, hideIsolatedNodes: true, minDegree: 0 }),
   setLoading: (loading) => set({ isLoading: loading }),
+  setHideIsolatedNodes: (hide) => set({ hideIsolatedNodes: hide }),
+  setMinDegree: (degree) => set({ minDegree: degree }),
 }));

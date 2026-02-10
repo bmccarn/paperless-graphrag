@@ -16,6 +16,8 @@ import {
 	ChevronDown,
 	RotateCcw,
 	Focus,
+	EyeOff,
+	Filter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +29,8 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
 	useGraphStore,
 	type ColorByOption,
@@ -50,6 +54,7 @@ interface GraphControlsProps {
 	isFullscreen?: boolean;
 	onToggleFullscreen?: () => void;
 	portalContainer?: HTMLElement | null;
+	hiddenNodeCount?: number;
 }
 
 export function GraphControls({
@@ -68,6 +73,7 @@ export function GraphControls({
 	isFullscreen,
 	onToggleFullscreen,
 	portalContainer,
+	hiddenNodeCount,
 }: GraphControlsProps) {
 	const [controlsExpanded, setControlsExpanded] = useState(false);
 	const [customLimit, setCustomLimit] = useState<string>(
@@ -83,6 +89,10 @@ export function GraphControls({
 		setColorBy,
 		sizeBy,
 		setSizeBy,
+		hideIsolatedNodes,
+		setHideIsolatedNodes,
+		minDegree,
+		setMinDegree,
 	} = useGraphStore();
 
 	// Sync customLimit with currentLimit when it changes
@@ -291,6 +301,40 @@ export function GraphControls({
 								</SelectContent>
 							</Select>
 						</div>
+					</div>
+
+					{/* Hide Isolated Nodes Toggle */}
+					<div className="bg-background border rounded-lg p-2">
+						<div className="flex items-center justify-between gap-2">
+							<label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer" htmlFor="hide-isolated">
+								<EyeOff className="h-3 w-3" />
+								Hide isolated{hiddenNodeCount ? ` (${hiddenNodeCount})` : ''}
+							</label>
+							<Switch
+								id="hide-isolated"
+								checked={hideIsolatedNodes}
+								onCheckedChange={setHideIsolatedNodes}
+							/>
+						</div>
+					</div>
+
+					{/* Min Degree Slider */}
+					<div className="bg-background border rounded-lg p-2 space-y-2">
+						<div className="flex items-center justify-between">
+							<label className="text-xs text-muted-foreground flex items-center gap-1">
+								<Filter className="h-3 w-3" />
+								Min connections
+							</label>
+							<span className="text-xs font-mono text-muted-foreground">{minDegree}</span>
+						</div>
+						<Slider
+							min={0}
+							max={10}
+							step={1}
+							value={[minDegree]}
+							onValueChange={([val]) => setMinDegree(val)}
+							className="w-full"
+						/>
 					</div>
 
 					{/* Reset View Button */}
@@ -542,6 +586,38 @@ export function GraphControls({
 									</SelectContent>
 								</Select>
 							</div>
+						</div>
+
+						{/* Hide Isolated Nodes Toggle */}
+						<div className="flex items-center justify-between bg-secondary/30 rounded-lg p-3">
+							<label className="text-xs text-muted-foreground flex items-center gap-1" htmlFor="hide-isolated-mobile">
+								<EyeOff className="h-3 w-3" />
+								Hide isolated{hiddenNodeCount ? ` (${hiddenNodeCount})` : ''}
+							</label>
+							<Switch
+								id="hide-isolated-mobile"
+								checked={hideIsolatedNodes}
+								onCheckedChange={setHideIsolatedNodes}
+							/>
+						</div>
+
+						{/* Min Degree Slider */}
+						<div className="bg-secondary/30 rounded-lg p-3 space-y-2">
+							<div className="flex items-center justify-between">
+								<label className="text-xs text-muted-foreground flex items-center gap-1">
+									<Filter className="h-3 w-3" />
+									Min connections
+								</label>
+								<span className="text-xs font-mono text-muted-foreground">{minDegree}</span>
+							</div>
+							<Slider
+								min={0}
+								max={10}
+								step={1}
+								value={[minDegree]}
+								onValueChange={([val]) => setMinDegree(val)}
+								className="w-full"
+							/>
 						</div>
 
 						{/* Reset Buttons Row */}
