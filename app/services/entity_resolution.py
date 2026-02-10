@@ -265,8 +265,10 @@ def _apply_merges(
             keep_idx = entity_id_to_idx[keep_id]
             merge_idx = entity_id_to_idx[merge_id]
 
-            keep_desc = str(entities_df.at[keep_idx, "description"] or "")
-            merge_desc = str(entities_df.at[merge_idx, "description"] or "")
+            raw_keep = entities_df.at[keep_idx, "description"]
+            raw_merge = entities_df.at[merge_idx, "description"]
+            keep_desc = str(raw_keep) if pd.notna(raw_keep) else ""
+            merge_desc = str(raw_merge) if pd.notna(raw_merge) else ""
 
             if merge_desc and merge_desc not in keep_desc:
                 combined = f"{keep_desc} {merge_desc}".strip()
