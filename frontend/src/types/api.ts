@@ -41,6 +41,7 @@ export interface QueryResponse {
 // Sync Types
 export interface SyncRequest {
   full: boolean;
+  reindex?: boolean;
 }
 
 export interface SyncResponse {

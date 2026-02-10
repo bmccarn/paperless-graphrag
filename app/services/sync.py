@@ -450,6 +450,81 @@ class SyncService:
             "index": index_result,
         }
 
+    async def force_reindex(
+        self,
+        graphrag: GraphRAGService,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> dict:
+        """Force a full GraphRAG re-index without syncing documents.
+
+        Useful when the extraction prompt or GraphRAG settings have changed
+        but the source documents haven't.
+
+        Args:
+            graphrag: GraphRAG service instance
+            progress_callback: Optional callback for progress updates
+
+        Returns:
+            Dict with index result
+        """
+        self.load_state()
+
+        if progress_callback:
+            progress_callback(5, "Skipping sync", "Force re-index requested")
+
+        if progress_callback:
+            progress_callback(10, "Starting indexing", "Running full GraphRAG index...")
+
+        try:
+            index_result = await graphrag.run_index(
+                update=False,  # Always full index
+                progress_callback=progress_callback,
+            )
+
+            # Run post-indexing entity resolution
+            if progress_callback:
+                progress_callback(97, "Resolving entities", "Deduplicating similar entities...")
+
+            try:
+                resolution_result = await asyncio.to_thread(
+                    resolve_entities, graphrag.output_dir
+                )
+                index_result["entity_resolution"] = resolution_result
+                if resolution_result.get("merges", 0) > 0:
+                    logger.info(
+                        "Entity resolution merged %d entities",
+                        resolution_result["merges"],
+                    )
+                    if progress_callback:
+                        progress_callback(
+                            99,
+                            "Entity resolution complete",
+                            f"Merged {resolution_result['merges']} duplicate entities",
+                        )
+            except Exception as e:
+                logger.warning("Entity resolution failed (non-fatal): %s", e)
+                index_result["entity_resolution"] = {
+                    "status": "failed",
+                    "error": str(e),
+                }
+
+            self.state.index_version += 1
+            await self.save_state()
+
+            return {
+                "sync": {"status": "skipped", "reason": "force reindex"},
+                "index": index_result,
+            }
+
+        except Exception as e:
+            import traceback
+            logger.error("Reindex failed: %s", e)
+            logger.error("Full traceback:\n%s", traceback.format_exc())
+            return {
+                "sync": {"status": "skipped", "reason": "force reindex"},
+                "index": {"status": "failed", "error": str(e)},
+            }
+
     def get_stats(self) -> dict:
         """Get sync statistics.
 

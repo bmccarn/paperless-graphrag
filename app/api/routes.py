@@ -32,6 +32,10 @@ class SyncRequest(BaseModel):
         default=False,
         description="Force full re-sync of all documents",
     )
+    reindex: bool = Field(
+        default=False,
+        description="Skip sync and force a full GraphRAG re-index",
+    )
 
 
 class SyncResponse(BaseModel):
@@ -167,6 +171,7 @@ async def trigger_sync(
 
     - **Incremental sync** (default): Only syncs changed documents
     - **Full sync** (full=true): Re-syncs all documents
+    - **Force re-index** (reindex=true): Skip sync, run full GraphRAG index
 
     Returns a task_id for tracking progress via GET /tasks/{task_id}.
     """
@@ -188,18 +193,25 @@ async def trigger_sync(
     async def run_sync():
         try:
             task_mgr.start_task(task_id)
-            logger.info("Starting sync task %s (full=%s)", task_id, request.full)
 
             sync_service = get_sync_service(settings)
             graphrag_service = get_graphrag_service(settings)
 
-            async with PaperlessClient(settings) as paperless:
-                result = await sync_service.sync_and_index(
-                    paperless=paperless,
+            if request.reindex:
+                logger.info("Starting reindex task %s", task_id)
+                result = await sync_service.force_reindex(
                     graphrag=graphrag_service,
-                    full=request.full,
                     progress_callback=progress_callback,
                 )
+            else:
+                logger.info("Starting sync task %s (full=%s)", task_id, request.full)
+                async with PaperlessClient(settings) as paperless:
+                    result = await sync_service.sync_and_index(
+                        paperless=paperless,
+                        graphrag=graphrag_service,
+                        full=request.full,
+                        progress_callback=progress_callback,
+                    )
 
             task_mgr.complete_task(task_id, result)
             logger.info("Sync task %s completed", task_id)
