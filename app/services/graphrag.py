@@ -105,8 +105,17 @@ class GraphRAGService:
 
     async def _generate_settings(self, settings_path: Path) -> None:
         """Generate GraphRAG settings.yaml with LiteLLM configuration."""
+        # Build rate limit config for v3 ModelConfig format
+        rate_limit_config = {
+            "type": "sliding_window",
+            "requests_per_period": self.settings.requests_per_minute,
+            "tokens_per_period": self.settings.tokens_per_minute,
+            "period_in_seconds": 60,
+        }
+
         settings_config = {
             # GraphRAG v3 config format
+            "concurrent_requests": self.settings.concurrent_requests,
             "completion_models": {
                 "default_completion_model": {
                     "model_provider": "openai",
@@ -114,10 +123,7 @@ class GraphRAGService:
                     "auth_method": "api_key",
                     "api_key": "${GRAPHRAG_API_KEY}",
                     "api_base": self.settings.litellm_base_url,
-                    "requests_per_minute": self.settings.requests_per_minute,
-                    "tokens_per_minute": self.settings.tokens_per_minute,
-                    "concurrent_requests": self.settings.concurrent_requests,
-                    "request_timeout": 600,
+                    "rate_limit": rate_limit_config,
                 },
                 "query_completion_model": {
                     "model_provider": "openai",
@@ -125,10 +131,7 @@ class GraphRAGService:
                     "auth_method": "api_key",
                     "api_key": "${GRAPHRAG_API_KEY}",
                     "api_base": self.settings.litellm_base_url,
-                    "requests_per_minute": self.settings.requests_per_minute,
-                    "tokens_per_minute": self.settings.tokens_per_minute,
-                    "concurrent_requests": self.settings.concurrent_requests,
-                    "request_timeout": 600,
+                    "rate_limit": rate_limit_config,
                 },
             },
             "embedding_models": {
@@ -138,6 +141,7 @@ class GraphRAGService:
                     "auth_method": "api_key",
                     "api_key": "${GRAPHRAG_API_KEY}",
                     "api_base": self.settings.litellm_base_url,
+                    "rate_limit": rate_limit_config,
                 },
             },
             "input": {
@@ -149,6 +153,10 @@ class GraphRAGService:
                 "base_dir": "input",
             },
             "output_storage": {
+                "type": "file",
+                "base_dir": "output",
+            },
+            "update_output_storage": {
                 "type": "file",
                 "base_dir": "output",
             },
@@ -336,7 +344,7 @@ class GraphRAGService:
     def has_index(self) -> bool:
         """Check if GraphRAG index exists."""
         # Check for key output files that indicate successful indexing
-        # GraphRAG 2.x outputs directly to the output directory
+        # GraphRAG v3 outputs parquet files directly to the output directory
         required_files = ["entities.parquet", "relationships.parquet", "text_units.parquet"]
         return all((self.output_dir / f).exists() for f in required_files)
 
@@ -698,7 +706,6 @@ class GraphRAGService:
             method,
             "--community-level",
             str(community_level),
-            "--query",
             query,
         ]
 
