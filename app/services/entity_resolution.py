@@ -6,6 +6,7 @@ using fuzzy matching heuristics and optional LLM confirmation.
 
 import logging
 import re
+import shutil
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
@@ -318,7 +319,7 @@ def _apply_merges(
         def edge_key(row):
             s = str(row.get("source", ""))
             t = str(row.get("target", ""))
-            return tuple(sorted([s, t]))
+            return (s, t)
 
         relationships_df["_edge_key"] = relationships_df.apply(edge_key, axis=1)
         relationships_df = relationships_df.drop_duplicates(
@@ -381,6 +382,18 @@ def resolve_entities(output_dir: Path) -> dict:
     entities_df, relationships_df = _apply_merges(
         entities_df, relationships_df, merge_pairs
     )
+
+    # Log merge summary
+    canonical_forms = len(set(keep for keep, _ in merge_pairs))
+    logger.info(
+        "Entity resolution: merged %d entities into %d canonical forms",
+        len(merge_pairs), canonical_forms,
+    )
+
+    # Backup originals before overwriting
+    shutil.copy2(entities_path, str(entities_path) + ".bak")
+    shutil.copy2(relationships_path, str(relationships_path) + ".bak")
+    logger.info("Backed up parquet files to .bak before overwriting")
 
     # Write back
     entities_df.to_parquet(entities_path, index=False)
