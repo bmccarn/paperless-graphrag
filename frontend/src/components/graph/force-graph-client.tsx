@@ -28,6 +28,8 @@ interface ForceGraphClientProps {
   nodeRelSize?: number;
   linkDirectionalArrowLength?: number;
   linkDirectionalArrowRelPos?: number;
+  linkDirectionalArrowColor?: string | ((link: any) => string);
+  linkLabel?: string | ((link: any) => string);
   linkColor?: string | ((link: any) => string);
   linkWidth?: number | ((link: any) => number);
   onNodeClick?: (node: any) => void;
