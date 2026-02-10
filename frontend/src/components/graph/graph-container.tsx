@@ -363,8 +363,8 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
     // Compute actual degree from links
     const degreeMap = new Map<string, number>();
     links.forEach((link) => {
-      const s = typeof link.source === 'string' ? link.source : link.source;
-      const t = typeof link.target === 'string' ? link.target : link.target;
+      const s = typeof link.source === 'string' ? link.source : link.source.id;
+      const t = typeof link.target === 'string' ? link.target : link.target.id;
       degreeMap.set(s, (degreeMap.get(s) || 0) + 1);
       degreeMap.set(t, (degreeMap.get(t) || 0) + 1);
     });
@@ -380,8 +380,8 @@ export function GraphContainer({ focusEntityId }: GraphContainerProps) {
     // Filter links to only include those between visible nodes
     const visibleNodeIds = new Set(filteredNodes.map((n) => n.id));
     const filteredLinks = links.filter((link) => {
-      const s = typeof link.source === 'string' ? link.source : link.source;
-      const t = typeof link.target === 'string' ? link.target : link.target;
+      const s = typeof link.source === 'string' ? link.source : link.source.id;
+      const t = typeof link.target === 'string' ? link.target : link.target.id;
       return visibleNodeIds.has(s) && visibleNodeIds.has(t);
     });
 
