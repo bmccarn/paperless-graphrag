@@ -39,6 +39,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    labels:
+      kuma.paperless-graphrag.http.name: "Paperless GraphRAG"
+      kuma.paperless-graphrag.http.url: "http://10.10.10.10:8003"
 
 networks:
   app_network:
