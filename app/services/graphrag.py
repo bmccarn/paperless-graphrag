@@ -154,15 +154,13 @@ class GraphRAGService:
                 "base_dir": "output",
             },
             "cache": {
-                "type": "file",
+                "type": "json",
                 "base_dir": "cache",
             },
             "chunks": {
                 "size": self.settings.chunk_size,
                 "overlap": self.settings.chunk_overlap,
-                "group_by_columns": ["id"],
                 "prepend_metadata": True,
-                "chunk_size_includes_metadata": True,
             },
             "extract_graph": {
                 "prompt": "prompts/extract_graph.txt",
@@ -230,17 +228,6 @@ class GraphRAGService:
                 "enabled": True,
                 "description": "Claims about financial obligations, policy coverages, insurance benefits, legal agreements, tax liabilities, medical coverage, certification requirements, or regulatory compliance",
                 "max_gleanings": 2,
-            },
-            "embed_graph": {
-                "enabled": True,
-                "dimensions": 384,
-                "num_walks": 10,
-                "walk_length": 40,
-                "window_size": 2,
-                "iterations": 3,
-            },
-            "umap": {
-                "enabled": True,
             },
             "prune_graph": {
                 "min_node_freq": 2,
