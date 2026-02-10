@@ -144,8 +144,7 @@ class GraphRAGService:
                 },
             },
             "input": {
-                "type": "file",
-                "file_type": "text",
+                "type": "text",
                 "base_dir": "input",
                 "file_pattern": ".*\\.txt$$",  # $$ escapes $ for GraphRAG's Template parser
             },
