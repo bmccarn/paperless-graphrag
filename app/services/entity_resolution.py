@@ -1,13 +1,14 @@
 """Post-indexing entity resolution service.
 
 Identifies and merges duplicate entities in GraphRAG output parquet files
-using fuzzy matching heuristics and optional LLM confirmation.
+using fuzzy matching heuristics with blocking keys for performance.
 """
 
 import logging
 import re
 import shutil
 from collections import defaultdict
+from itertools import combinations
 from pathlib import Path
 from typing import Optional
 
@@ -15,71 +16,113 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# ── Known aliases (maiden names, etc.) ────────────────────────────────
+# Maps alternate last names to canonical last names for specific people.
+# Only used when first-name tokens overlap.
+KNOWN_ALIASES: dict[str, str] = {
+    "MCADAM": "MCCARN",  # Chelsea's maiden name
+}
+
+
+# ── Helpers ───────────────────────────────────────────────────────────
 
 def _normalize_name(name: str) -> str:
-    """Normalize a name for comparison: uppercase, strip whitespace/punctuation."""
+    """Normalize a name for comparison: uppercase, strip punctuation/whitespace."""
     name = name.upper().strip()
-    # Remove common suffixes/prefixes that don't affect identity
-    name = re.sub(r'\s+', ' ', name)
-    return name
+    name = re.sub(r'[.,;:\-\'\"()&]', ' ', name)
+    return re.sub(r'\s+', ' ', name).strip()
 
 
 def _tokenize_name(name: str) -> set[str]:
-    """Split a name into tokens for overlap comparison."""
+    """Split a normalized name into tokens."""
     return set(_normalize_name(name).split())
 
 
-def _token_overlap_ratio(name_a: str, name_b: str) -> float:
-    """Compute Jaccard similarity of name tokens."""
-    tokens_a = _tokenize_name(name_a)
-    tokens_b = _tokenize_name(name_b)
-    if not tokens_a or not tokens_b:
-        return 0.0
-    intersection = tokens_a & tokens_b
-    union = tokens_a | tokens_b
-    return len(intersection) / len(union)
+def _levenshtein(a: str, b: str) -> int:
+    """Compute Levenshtein edit distance between two strings."""
+    if len(a) < len(b):
+        return _levenshtein(b, a)
+    if len(b) == 0:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (ca != cb)))
+        prev = curr
+    return prev[-1]
 
 
-def _is_substring_match(short: str, long: str) -> bool:
-    """Check if all tokens of the shorter name appear in the longer name."""
-    tokens_short = _tokenize_name(short)
-    tokens_long = _tokenize_name(long)
-    return tokens_short.issubset(tokens_long) and len(tokens_short) < len(tokens_long)
+def _is_proper_noun(name: str) -> bool:
+    """Heuristic: does this look like a real person's name (not a generic role)?
 
-
-def _levenshtein_ratio(a: str, b: str) -> float:
-    """Simple Levenshtein-based similarity ratio without external deps.
-
-    Uses dynamic programming. Returns value in [0, 1] where 1 = identical.
+    Real names usually have 2-4 capitalized tokens and no common role words.
     """
-    a = _normalize_name(a)
-    b = _normalize_name(b)
-    if a == b:
-        return 1.0
-    len_a, len_b = len(a), len(b)
-    if len_a == 0 or len_b == 0:
-        return 0.0
+    ROLE_INDICATORS = {
+        "EMPLOYEE", "EMPLOYER", "OFFICER", "MEMBER", "REPRESENTATIVE",
+        "APPLICANT", "BENEFICIARY", "CLAIMANT", "VETERAN", "SPOUSE",
+        "GUARDIAN", "CUSTODIAN", "ATTORNEY", "AGENT", "PROVIDER",
+        "SUPERVISOR", "DIRECTOR", "MANAGER", "TENANT", "OWNER",
+        "HOLDER", "SIGNER", "PATIENT", "CLIENT", "CUSTOMER",
+        "INSURED", "SUBSCRIBER", "PURCHASER", "SELLER", "BUYER",
+        "OCCUPANT", "RESIDENT", "PERSONNEL", "WORKER", "STAFF",
+        "CAREGIVER", "DEPENDENT", "CHILD", "PARENT", "FAMILY",
+        "HEIRS", "SUCCESSORS", "ASSIGNS", "PARTIES", "PERSON",
+        "INDIVIDUALS", "TAXPAYER", "PAYER", "PAYEE", "DEBTOR",
+    }
+    tokens = _tokenize_name(name)
+    if not tokens:
+        return False
+    # If any token is a role indicator, it's probably a generic entity
+    if tokens & ROLE_INDICATORS:
+        return False
+    # Single-word "names" that are all caps and >10 chars are likely roles
+    if len(tokens) == 1 and len(list(tokens)[0]) > 12:
+        return False
+    return True
 
-    # Optimize: if length difference is too large, skip
-    if abs(len_a - len_b) / max(len_a, len_b) > 0.5:
-        return 0.0
 
-    # Standard DP Levenshtein
-    matrix = list(range(len_b + 1))
-    for i in range(1, len_a + 1):
-        prev = matrix[0]
-        matrix[0] = i
-        for j in range(1, len_b + 1):
-            temp = matrix[j]
-            if a[i - 1] == b[j - 1]:
-                matrix[j] = prev
-            else:
-                matrix[j] = 1 + min(prev, matrix[j], matrix[j - 1])
-            prev = temp
+def _is_joint_entity(name: str) -> bool:
+    """Check if name represents multiple people (e.g., 'BLAKE T & CHELSEA J MCCARN')."""
+    norm = _normalize_name(name)
+    # Already stripped & to space in _normalize_name, so check for patterns like
+    # "FIRSTNAME1 ... FIRSTNAME2 ... LASTNAME" which would have been "F1 & F2 LAST"
+    # Better: check original name for & or "and" between name parts
+    return bool(re.search(r'&|\bAND\b', name.upper()))
 
-    distance = matrix[len_b]
-    return 1.0 - distance / max(len_a, len_b)
 
+def _middle_initial_conflicts(name_a: str, name_b: str) -> bool:
+    """Check if two names have conflicting middle initials.
+
+    E.g., "LOWELL E LANDER" vs "LOWELL X LANDER" — E ≠ X, likely different people.
+    Only applies when both names have the same structure with a single-char token.
+    """
+    tokens_a = _normalize_name(name_a).split()
+    tokens_b = _normalize_name(name_b).split()
+
+    if len(tokens_a) != len(tokens_b) or len(tokens_a) < 3:
+        return False
+
+    # Find single-character tokens (likely initials) at the same position
+    for ta, tb in zip(tokens_a, tokens_b):
+        if len(ta) == 1 and len(tb) == 1 and ta != tb:
+            return True
+    return False
+
+
+def _apply_known_aliases(name: str) -> str:
+    """Replace known alias last names with canonical versions for comparison."""
+    tokens = _normalize_name(name).split()
+    if not tokens:
+        return name
+    last = tokens[-1]
+    if last in KNOWN_ALIASES:
+        tokens[-1] = KNOWN_ALIASES[last]
+        return " ".join(tokens)
+    return _normalize_name(name)
+
+
+# ── Main merge candidate finder ──────────────────────────────────────
 
 def _find_merge_candidates(
     entities_df: pd.DataFrame,
@@ -87,119 +130,272 @@ def _find_merge_candidates(
 ) -> list[tuple[str, str]]:
     """Find pairs of entities that should be merged.
 
-    Returns list of (keep_id, merge_id) tuples where merge_id should be
-    merged into keep_id. The entity with the longer/more complete name is kept.
-
-    Uses conservative heuristics to avoid false merges:
-    - Same entity type required
-    - High name similarity (fuzzy match or substring)
-    - Ambiguous last-name-only entities are NOT merged unless context is clear
+    Uses blocking keys for O(n) performance instead of O(n²) pairwise comparison.
+    Returns list of (keep_id, merge_id) tuples.
     """
     merge_pairs = []
+    name_col = "title" if "title" in entities_df.columns else "name"
 
-    # Group entities by type for comparison
-    type_groups = entities_df.groupby("type")
+    # Only process PERSON entities for now (other types rarely have duplicates
+    # and the heuristics are tuned for person names)
+    person_mask = entities_df["type"].str.upper() == "PERSON"
+    persons = entities_df[person_mask].copy()
 
-    for entity_type, group in type_groups:
-        entities = group.to_dict("records")
-        n = len(entities)
+    if len(persons) < 2:
+        return merge_pairs
 
-        if n < 2:
+    # Pre-compute normalized info
+    records = []
+    for _, row in persons.iterrows():
+        name = str(row.get(name_col, ""))
+        norm = _normalize_name(name)
+        tokens = set(norm.split())
+        alias_norm = _apply_known_aliases(name)
+        alias_tokens = set(alias_norm.split())
+        records.append({
+            "id": str(row["id"]),
+            "name": name,
+            "norm": norm,
+            "tokens": tokens,
+            "alias_norm": alias_norm,
+            "alias_tokens": alias_tokens,
+            "is_proper": _is_proper_noun(name),
+            "is_joint": _is_joint_entity(name),
+        })
+
+    # Build ambiguity set: last names shared by multiple distinct people
+    last_name_people = defaultdict(set)
+    for r in records:
+        parts = r["norm"].split()
+        if len(parts) >= 2:
+            last = parts[-1]
+            # Use frozenset of tokens as identity proxy
+            last_name_people[last].add(frozenset(r["tokens"]))
+        # Also check alias tokens
+        alias_parts = r["alias_norm"].split()
+        if len(alias_parts) >= 2:
+            alias_last = alias_parts[-1]
+            last_name_people[alias_last].add(frozenset(r["alias_tokens"]))
+
+    ambiguous_lastnames = {
+        ln for ln, people in last_name_people.items()
+        if len(people) > 1
+    }
+
+    # Index by name for dedup
+    seen_pairs = set()
+
+    def _add_merge(keep_rec, merge_rec, reason):
+        pair = (keep_rec["id"], merge_rec["id"])
+        rev = (merge_rec["id"], keep_rec["id"])
+        if pair not in seen_pairs and rev not in seen_pairs:
+            seen_pairs.add(pair)
+            merge_pairs.append(pair)
+            logger.info(
+                "Merge candidate: '%s' <- '%s' [%s]",
+                keep_rec["name"], merge_rec["name"], reason,
+            )
+
+    def _pick_keep(a, b):
+        """Pick the more complete name as canonical."""
+        # Never use a joint entity as canonical
+        if a["is_joint"] and not b["is_joint"]:
+            return b, a
+        if b["is_joint"] and not a["is_joint"]:
+            return a, b
+        # Prefer more tokens, then longer string
+        if len(a["tokens"]) != len(b["tokens"]):
+            return (a, b) if len(a["tokens"]) >= len(b["tokens"]) else (b, a)
+        return (a, b) if len(a["name"]) >= len(b["name"]) else (b, a)
+
+    # ── Strategy 1: Exact normalized match ────────────────────────────
+    norm_groups = defaultdict(list)
+    for r in records:
+        norm_groups[r["norm"]].append(r)
+
+    for norm_name, group in norm_groups.items():
+        if len(group) < 2:
             continue
+        keep = max(group, key=lambda r: len(r["name"]))
+        for r in group:
+            if r["id"] != keep["id"]:
+                _add_merge(keep, r, "exact-norm")
 
-        # Build a map of entity_id -> set of related entity names for context
-        entity_relationships = defaultdict(set)
-        for _, rel in relationships_df.iterrows():
-            source = str(rel.get("source", ""))
-            target = str(rel.get("target", ""))
-            entity_relationships[source].add(target)
-            entity_relationships[target].add(source)
+    # ── Strategy 2: Token-set match (reordered names) ────────────────
+    token_groups = defaultdict(list)
+    for r in records:
+        key = frozenset(r["tokens"])
+        token_groups[key].append(r)
 
-        # Compare all pairs within same type
-        for i in range(n):
-            for j in range(i + 1, n):
-                ent_a = entities[i]
-                ent_b = entities[j]
-                name_a = str(ent_a.get("title", ent_a.get("name", "")))
-                name_b = str(ent_b.get("title", ent_b.get("name", "")))
-                norm_a = _normalize_name(name_a)
-                norm_b = _normalize_name(name_b)
+    for key, group in token_groups.items():
+        if len(group) < 2:
+            continue
+        # Deduplicate by id, exclude joint entities
+        unique = {r["id"]: r for r in group if not r["is_joint"]}
+        if len(unique) < 2:
+            continue
+        recs = list(unique.values())
+        keep = max(recs, key=lambda r: (len(r["tokens"]), len(r["name"])))
+        for r in recs:
+            if r["id"] != keep["id"]:
+                _add_merge(keep, r, "token-reorder")
 
-                if norm_a == norm_b:
-                    # Exact match after normalization — always merge
-                    pass
-                elif _is_substring_match(norm_a, norm_b) or _is_substring_match(norm_b, norm_a):
-                    # One name is a subset of the other (e.g., "BLAKE" vs "BLAKE T MCCARN")
-                    shorter = norm_a if len(norm_a.split()) < len(norm_b.split()) else norm_b
-                    longer = norm_b if shorter == norm_a else norm_a
+    # ── Strategy 2b: Token-set match with alias resolution ───────────
+    alias_token_groups = defaultdict(list)
+    for r in records:
+        key = frozenset(r["alias_tokens"])
+        alias_token_groups[key].append(r)
 
-                    # Safety check: single-token names that are common last names
-                    # could be ambiguous (e.g., "MCCARN" could be Blake or Chelsea)
-                    if len(shorter.split()) == 1:
-                        # Check if this single token matches multiple longer entities
-                        short_token = shorter.split()[0]
-                        matches = [
-                            e for e in entities
-                            if short_token in _normalize_name(
-                                str(e.get("title", e.get("name", "")))
-                            ).split()
-                            and _normalize_name(str(e.get("title", e.get("name", "")))) != shorter
-                        ]
-                        if len(matches) > 1:
-                            # Ambiguous — multiple entities share this token
-                            logger.debug(
-                                "Skipping ambiguous merge: '%s' matches %d entities (%s)",
-                                shorter,
-                                len(matches),
-                                [str(m.get("title", m.get("name", ""))) for m in matches[:3]],
-                            )
-                            continue
+    for key, group in alias_token_groups.items():
+        if len(group) < 2:
+            continue
+        unique = {r["id"]: r for r in group if not r["is_joint"]}
+        if len(unique) < 2:
+            continue
+        recs = list(unique.values())
+        keep = max(recs, key=lambda r: (len(r["tokens"]), len(r["name"])))
+        for r in recs:
+            if r["id"] != keep["id"]:
+                _add_merge(keep, r, "alias-match")
 
-                        # Check shared relationships for context
-                        id_a = str(ent_a.get("id", ""))
-                        id_b = str(ent_b.get("id", ""))
-                        shared_rels = entity_relationships.get(name_a, set()) & entity_relationships.get(name_b, set())
-                        if not shared_rels and len(shorter.split()) == 1:
-                            # Single token, no shared relationships — too risky
-                            logger.debug(
-                                "Skipping low-confidence merge: '%s' -> '%s' (no shared relationships)",
-                                shorter, longer,
-                            )
-                            continue
-                elif _levenshtein_ratio(norm_a, norm_b) >= 0.85:
-                    # High fuzzy similarity (handles typos, minor variations)
-                    pass
-                elif _token_overlap_ratio(name_a, name_b) >= 0.6 and entity_type.upper() == "PERSON":
-                    # Partial token overlap for person names
-                    # Additional check: must share at least one relationship
-                    shared_rels = entity_relationships.get(name_a, set()) & entity_relationships.get(name_b, set())
-                    if not shared_rels:
+    # ── Strategy 3: Subset match (all tokens of A in B) ──────────────
+    # Index: token -> set of record indices
+    token_index = defaultdict(set)
+    for i, r in enumerate(records):
+        for t in r["tokens"]:
+            token_index[t].add(i)
+
+    for i, r in enumerate(records):
+        if len(r["tokens"]) < 2:
+            continue
+        if r["is_joint"]:
+            continue  # Don't use joint entities as subset source
+
+        # Find records that contain ALL tokens of r
+        candidates = None
+        for t in r["tokens"]:
+            if candidates is None:
+                candidates = set(token_index[t])
+            else:
+                candidates &= token_index[t]
+
+        for j in candidates:
+            if j == i:
+                continue
+            other = records[j]
+            if other["is_joint"]:
+                continue  # Don't merge into or from joint entities
+
+            # r's tokens are a strict subset of other's tokens
+            if r["tokens"] < other["tokens"]:
+                # Check ambiguity: single-token names matching ambiguous last names
+                if len(r["tokens"]) == 1:
+                    token = list(r["tokens"])[0]
+                    if token in ambiguous_lastnames:
                         continue
-                else:
+                    # Also skip single-token generic roles
+                    if not r["is_proper"]:
+                        continue
+
+                keep, merge = _pick_keep(other, r)
+                _add_merge(keep, merge, "subset")
+
+    # ── Strategy 3b: Subset match with alias resolution ──────────────
+    alias_token_index = defaultdict(set)
+    for i, r in enumerate(records):
+        for t in r["alias_tokens"]:
+            alias_token_index[t].add(i)
+
+    for i, r in enumerate(records):
+        if len(r["alias_tokens"]) < 2 or r["is_joint"]:
+            continue
+        candidates = None
+        for t in r["alias_tokens"]:
+            if candidates is None:
+                candidates = set(alias_token_index[t])
+            else:
+                candidates &= alias_token_index[t]
+
+        for j in candidates:
+            if j == i:
+                continue
+            other = records[j]
+            if other["is_joint"]:
+                continue
+            if r["alias_tokens"] < other["alias_tokens"]:
+                if len(r["alias_tokens"]) == 1:
+                    continue
+                keep, merge = _pick_keep(other, r)
+                _add_merge(keep, merge, "alias-subset")
+
+    # ── Strategy 4: OCR fuzzy (1-token diff, ≤2 edit distance) ───────
+    # Blocking: group by (sorted tokens minus one)
+    block_index = defaultdict(set)
+    for i, r in enumerate(records):
+        tlist = sorted(r["tokens"])
+        if len(tlist) < 2:
+            continue
+        if not r["is_proper"]:
+            continue  # Skip generic roles for fuzzy matching
+        for k in range(len(tlist)):
+            key = tuple(tlist[:k] + tlist[k + 1:])
+            block_index[key].add(i)
+
+    for key, indices in block_index.items():
+        if len(indices) < 2:
+            continue
+        idx_list = sorted(indices)
+        for ii in range(len(idx_list)):
+            for jj in range(ii + 1, len(idx_list)):
+                a, b = records[idx_list[ii]], records[idx_list[jj]]
+
+                if a["is_joint"] or b["is_joint"]:
+                    continue
+                if a["tokens"] == b["tokens"]:
+                    continue  # Already caught
+
+                # Find differing tokens
+                shared = a["tokens"] & b["tokens"]
+                diff_a = a["tokens"] - shared
+                diff_b = b["tokens"] - shared
+                if len(diff_a) != 1 or len(diff_b) != 1:
                     continue
 
-                # Determine which to keep: prefer longer (more complete) name
-                tokens_a = len(norm_a.split())
-                tokens_b = len(norm_b.split())
-                if tokens_a >= tokens_b:
-                    keep_id = str(ent_a.get("id", ""))
-                    merge_id = str(ent_b.get("id", ""))
-                    logger.info(
-                        "Entity merge candidate: '%s' <- '%s' (type=%s)",
-                        name_a, name_b, entity_type,
-                    )
-                else:
-                    keep_id = str(ent_b.get("id", ""))
-                    merge_id = str(ent_a.get("id", ""))
-                    logger.info(
-                        "Entity merge candidate: '%s' <- '%s' (type=%s)",
-                        name_b, name_a, entity_type,
-                    )
+                da, db = list(diff_a)[0], list(diff_b)[0]
+                dist = _levenshtein(da, db)
+                if dist > 2:
+                    continue
 
-                merge_pairs.append((keep_id, merge_id))
+                # Reject middle-initial conflicts
+                if _middle_initial_conflicts(a["name"], b["name"]):
+                    logger.debug(
+                        "Skipping middle-initial conflict: '%s' vs '%s'",
+                        a["name"], b["name"],
+                    )
+                    continue
+
+                # Reject if the differing tokens are clearly different words
+                # (not OCR errors but genuinely different, e.g., GRANDFATHER/GRANDMOTHER)
+                if dist == 2:
+                    # Short tokens (≤3 chars): likely numbers/initials, too ambiguous
+                    if len(da) <= 3 or len(db) <= 3:
+                        continue
+                    # For tokens ≥8 chars with edit distance 2: could be a real
+                    # different word (GRANDFATHER vs GRANDMOTHER). Require that
+                    # the edits are NOT substitutions at the same position
+                    # (substitutions suggest different words; insertions/deletions
+                    # suggest OCR errors like missing/extra chars).
+                    if len(da) >= 8 and len(db) >= 8 and abs(len(da) - len(db)) == 0:
+                        # Same length + dist 2 = two substitutions = likely different word
+                        continue
+
+                keep, merge = _pick_keep(a, b)
+                _add_merge(keep, merge, f"ocr-fuzzy(lev={dist})")
 
     return merge_pairs
 
+
+# ── Apply merges ──────────────────────────────────────────────────────
 
 def _apply_merges(
     entities_df: pd.DataFrame,
@@ -212,7 +408,7 @@ def _apply_merges(
     - Combine descriptions
     - Redirect relationships from merge_id to keep_id
     - Remove merged entity
-    - Deduplicate relationships
+    - Deduplicate relationships (directional — does NOT sort edge keys)
     """
     if not merge_pairs:
         return entities_df, relationships_df
@@ -225,8 +421,8 @@ def _apply_merges(
         while ultimate_keep in merge_map:
             ultimate_keep = merge_map[ultimate_keep]
         merge_map[merge_id] = ultimate_keep
-        # Also update any existing entries that pointed to keep_id
-        for k, v in merge_map.items():
+        # Update any existing entries that pointed to keep_id or merge_id
+        for k, v in list(merge_map.items()):
             if v == keep_id or v == merge_id:
                 merge_map[k] = ultimate_keep
 
@@ -242,17 +438,15 @@ def _apply_merges(
 
     # Build lookups BEFORE any mutations
     entity_id_to_idx = {str(row["id"]): idx for idx, row in entities_df.iterrows()}
-
     name_col = "title" if "title" in entities_df.columns else "name"
 
-    # Build name maps from original data (before removal)
     id_to_name = {
         str(row["id"]): str(row.get(name_col, ""))
         for _, row in entities_df.iterrows()
     }
 
-    # Build merge_id -> keep_name map for relationship redirection
-    merge_name_map = {}  # old_name -> new_name
+    # Build name redirect map
+    merge_name_map = {}
     for merge_id, keep_id in merge_map.items():
         old_name = id_to_name.get(merge_id, "")
         new_name = id_to_name.get(keep_id, "")
@@ -298,7 +492,7 @@ def _apply_merges(
             lambda x: merge_name_map.get(str(x), str(x))
         )
 
-    # Remove self-referential relationships (caused by merging)
+    # Remove self-referential relationships
     if "source_id" in relationships_df.columns and "target_id" in relationships_df.columns:
         relationships_df = relationships_df[
             relationships_df["source_id"] != relationships_df["target_id"]
@@ -308,20 +502,16 @@ def _apply_merges(
             relationships_df["source"] != relationships_df["target"]
         ].reset_index(drop=True)
 
-    # Deduplicate relationships (same source+target, keep highest weight)
+    # Deduplicate relationships — directional: (source, target) NOT sorted
     if "source" in relationships_df.columns and "target" in relationships_df.columns:
-        # Sort by weight descending so first occurrence has highest weight
         weight_col = "combined_degree" if "combined_degree" in relationships_df.columns else (
             "weight" if "weight" in relationships_df.columns else None
         )
         if weight_col:
             relationships_df = relationships_df.sort_values(weight_col, ascending=False)
 
-        # Create a normalized edge key (alphabetical order to handle bidirectional)
         def edge_key(row):
-            s = str(row.get("source", ""))
-            t = str(row.get("target", ""))
-            return (s, t)
+            return (str(row.get("source", "")), str(row.get("target", "")))
 
         relationships_df["_edge_key"] = relationships_df.apply(edge_key, axis=1)
         relationships_df = relationships_df.drop_duplicates(
@@ -330,6 +520,8 @@ def _apply_merges(
 
     return entities_df, relationships_df
 
+
+# ── Public API ────────────────────────────────────────────────────────
 
 def resolve_entities(output_dir: Path) -> dict:
     """Run entity resolution on GraphRAG output files.
@@ -385,7 +577,6 @@ def resolve_entities(output_dir: Path) -> dict:
         entities_df, relationships_df, merge_pairs
     )
 
-    # Log merge summary
     canonical_forms = len(set(keep for keep, _ in merge_pairs))
     logger.info(
         "Entity resolution: merged %d entities into %d canonical forms",
