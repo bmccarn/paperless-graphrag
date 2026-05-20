@@ -3,10 +3,15 @@
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+import httpx
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.config import get_settings, is_configured
+from app.services.model_catalog import (
+    AvailableModelsResponse,
+    fetch_available_models,
+)
 from app.services.settings_persistence import (
     get_settings_persistence,
     CONFIGURABLE_SETTINGS,
@@ -58,6 +63,13 @@ class ConfigStatusResponse(BaseModel):
     is_configured: bool
     missing_required: list[str]
     message: str
+
+
+class CurrentModelsResponse(BaseModel):
+    """Currently configured model routes."""
+    indexing_model: str
+    query_model: str
+    embedding_model: str
 
 
 @router.get("", response_model=SettingsResponse)
@@ -189,6 +201,41 @@ async def get_config_status():
         is_configured=configured,
         missing_required=missing,
         message=message,
+    )
+
+
+@router.get("/models", response_model=AvailableModelsResponse)
+async def get_available_models(
+    mode: Optional[str] = Query(
+        default=None,
+        pattern="^(chat|embedding)$",
+        description="Optional model mode filter",
+    ),
+):
+    """Get available LiteLLM models for UI selection."""
+    settings = get_settings()
+    try:
+        return await fetch_available_models(settings, mode=mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"LiteLLM model lookup failed: {e.response.text}",
+        )
+    except Exception as e:
+        logger.exception("LiteLLM model lookup failed")
+        raise HTTPException(status_code=502, detail=f"LiteLLM model lookup failed: {e}")
+
+
+@router.get("/current-models", response_model=CurrentModelsResponse)
+async def get_current_models():
+    """Get currently configured model routes."""
+    settings = get_settings()
+    return CurrentModelsResponse(
+        indexing_model=settings.indexing_model,
+        query_model=settings.query_model,
+        embedding_model=settings.embedding_model,
     )
 
 

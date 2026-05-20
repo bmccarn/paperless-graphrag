@@ -193,3 +193,23 @@ export interface ConnectionTestResult {
   paperless: { success: boolean; message: string };
   litellm: { success: boolean; message: string };
 }
+
+export interface AvailableModel {
+  id: string;
+  display_name: string;
+  provider: string | null;
+  provider_display_name: string | null;
+  mode: 'chat' | 'embedding' | string;
+  upstream_model: string | null;
+}
+
+export interface AvailableModelsResponse {
+  models: AvailableModel[];
+  source: string;
+}
+
+export interface CurrentModelsResponse {
+  indexing_model: string;
+  query_model: string;
+  embedding_model: string;
+}

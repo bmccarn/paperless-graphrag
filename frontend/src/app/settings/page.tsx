@@ -19,10 +19,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { getSettings, updateSettings, testConnections, restartBackend } from '@/lib/api';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  getAvailableModels,
+  getSettings,
+  updateSettings,
+  testConnections,
+  restartBackend,
+} from '@/lib/api';
 import { testChatConnection } from '@/lib/api/chat';
 import { toast } from 'sonner';
-import type { SettingsResponse, SettingValue, ConnectionTestResult } from '@/types';
+import type { AvailableModel, SettingsResponse, SettingValue, ConnectionTestResult } from '@/types';
 import { Database } from 'lucide-react';
 
 // Settings that require a restart when changed
@@ -76,8 +89,21 @@ const SETTING_GROUPS: Record<string, {
   },
 };
 
+const MODEL_SETTING_MODES: Record<string, 'chat' | 'embedding'> = {
+  indexing_model: 'chat',
+  query_model: 'chat',
+  embedding_model: 'embedding',
+};
+
+function getModelLabel(model: AvailableModel) {
+  return model.provider_display_name
+    ? `${model.provider_display_name} · ${model.display_name}`
+    : model.display_name;
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [showSensitive, setShowSensitive] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -124,8 +150,18 @@ export default function SettingsPage() {
     }
   };
 
+  const fetchAvailableModels = async () => {
+    try {
+      const data = await getAvailableModels();
+      setAvailableModels(data.models);
+    } catch (e) {
+      console.warn('Failed to load LiteLLM model catalog:', e);
+    }
+  };
+
   useEffect(() => {
     fetchSettings();
+    fetchAvailableModels();
   }, []);
 
   const handleSave = async () => {
@@ -254,6 +290,10 @@ export default function SettingsPage() {
   const renderSettingInput = (key: string, setting: SettingValue) => {
     const isVisible = showSensitive[key] || !setting.sensitive;
     const currentValue = formValues[key] || '';
+    const modelMode = MODEL_SETTING_MODES[key];
+    const modelOptions = modelMode
+      ? availableModels.filter((model) => model.mode === modelMode)
+      : [];
     const placeholder = setting.sensitive && setting.has_value
       ? '(configured - leave empty to keep)'
       : setting.default?.toString() || '';
@@ -284,17 +324,46 @@ export default function SettingsPage() {
         {setting.description && (
           <p className="text-xs text-muted-foreground">{setting.description}</p>
         )}
-        <Input
-          id={key}
-          type={inputType}
-          step={step}
-          value={currentValue}
-          onChange={(e) => setFormValues((prev) => ({ ...prev, [key]: e.target.value }))}
-          placeholder={placeholder}
-          min={setting.min}
-          max={setting.max}
-          className="shadow-sm"
-        />
+        {modelMode && modelOptions.length > 0 ? (
+          <Select
+            value={currentValue || setting.default?.toString() || ''}
+            onValueChange={(value) => setFormValues((prev) => ({ ...prev, [key]: value }))}
+          >
+            <SelectTrigger id={key} className="shadow-sm">
+              <SelectValue placeholder={placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {currentValue && !modelOptions.some((model) => model.id === currentValue) && (
+                <SelectItem value={currentValue}>
+                  <div className="flex flex-col">
+                    <span>{currentValue}</span>
+                    <span className="text-xs text-muted-foreground">Current custom value</span>
+                  </div>
+                </SelectItem>
+              )}
+              {modelOptions.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  <div className="flex flex-col">
+                    <span>{getModelLabel(model)}</span>
+                    <span className="text-xs text-muted-foreground">{model.id}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            id={key}
+            type={inputType}
+            step={step}
+            value={currentValue}
+            onChange={(e) => setFormValues((prev) => ({ ...prev, [key]: e.target.value }))}
+            placeholder={placeholder}
+            min={setting.min}
+            max={setting.max}
+            className="shadow-sm"
+          />
+        )}
         {(setting.type === 'integer' || setting.type === 'float') && (setting.min !== undefined || setting.max !== undefined) && (
           <p className="text-xs text-muted-foreground/70">
             Range: {setting.min ?? 'any'} - {setting.max ?? 'any'}

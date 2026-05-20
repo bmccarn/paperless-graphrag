@@ -12,6 +12,9 @@ from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CHAT_MODEL = "gemini-3.5-flash"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+
 # Path to persisted runtime settings
 # Use relative path that works for both Docker (/app) and local development
 _project_root = Path(__file__).parent.parent
@@ -74,15 +77,15 @@ class Settings(BaseSettings):
 
     # Model selection
     indexing_model: str = Field(
-        default="gpt-5-mini",
+        default=DEFAULT_CHAT_MODEL,
         description="Model for GraphRAG indexing (entity extraction)"
     )
     query_model: str = Field(
-        default="gpt-5-mini",
+        default=DEFAULT_CHAT_MODEL,
         description="Model for GraphRAG queries (user-facing)"
     )
     embedding_model: str = Field(
-        default="text-embedding-3-small",
+        default=DEFAULT_EMBEDDING_MODEL,
         description="Model for text embeddings"
     )
 

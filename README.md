@@ -110,8 +110,8 @@ LITELLM_BASE_URL=http://your-litellm-host:4000
 LITELLM_API_KEY=your_api_key
 
 # Optional: Model selection (can also be set via UI)
-INDEXING_MODEL=gpt-5-mini       # Model for entity extraction
-QUERY_MODEL=gpt-5-mini          # Model for user queries
+INDEXING_MODEL=gemini-3.5-flash # Model for entity extraction
+QUERY_MODEL=gemini-3.5-flash    # Model for user queries
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
@@ -242,8 +242,8 @@ Access the dashboard at <http://localhost:8003>
 | `PAPERLESS_TOKEN` | Yes | - | API token from paperless-ngx |
 | `LITELLM_BASE_URL` | Yes | - | LiteLLM proxy URL |
 | `LITELLM_API_KEY` | Yes | - | API key for LiteLLM |
-| `INDEXING_MODEL` | No | `gpt-5-mini` | Model for entity extraction |
-| `QUERY_MODEL` | No | `gpt-5.1` | Model for query responses |
+| `INDEXING_MODEL` | No | `gemini-3.5-flash` | Model for entity extraction |
+| `QUERY_MODEL` | No | `gemini-3.5-flash` | Model for query responses |
 | `EMBEDDING_MODEL` | No | `text-embedding-3-small` | Model for embeddings |
 | `CHUNK_SIZE` | No | `1200` | Text chunk size (100-4000 tokens) |
 | `CHUNK_OVERLAP` | No | `100` | Overlap between chunks (0-500) |
