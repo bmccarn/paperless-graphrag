@@ -5,6 +5,12 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.config import (
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_EMBEDDING_MODEL,
+    normalize_legacy_model_defaults,
+)
+
 logger = logging.getLogger(__name__)
 
 # Settings that can be configured at runtime (sensitive ones marked)
@@ -34,17 +40,17 @@ CONFIGURABLE_SETTINGS = {
     # Model settings
     "indexing_model": {
         "type": "string", "sensitive": False, "required": False,
-        "label": "Indexing Model", "default": "gpt-5-mini",
+        "label": "Indexing Model", "default": DEFAULT_CHAT_MODEL,
         "description": "LLM used for document indexing (entity extraction, summarization). Larger models = better extraction but higher cost."
     },
     "query_model": {
         "type": "string", "sensitive": False, "required": False,
-        "label": "Query Model", "default": "gpt-5-mini",
+        "label": "Query Model", "default": DEFAULT_CHAT_MODEL,
         "description": "LLM used for answering queries. Can be different from indexing model - often a larger model for better responses."
     },
     "embedding_model": {
         "type": "string", "sensitive": False, "required": False,
-        "label": "Embedding Model", "default": "text-embedding-3-small",
+        "label": "Embedding Model", "default": DEFAULT_EMBEDDING_MODEL,
         "description": "Model for generating text embeddings. Used for vector similarity search in basic mode."
     },
 
@@ -141,7 +147,7 @@ class SettingsPersistence:
         if self.settings_path.exists():
             try:
                 with open(self.settings_path) as f:
-                    self._cache = json.load(f)
+                    self._cache = normalize_legacy_model_defaults(json.load(f))
                 logger.info("Loaded runtime settings from %s", self.settings_path)
             except Exception as e:
                 logger.warning("Failed to load runtime settings: %s", e)

@@ -5,6 +5,8 @@ import type {
   SettingsUpdateResponse,
   ConfigStatusResponse,
   ConnectionTestResult,
+  AvailableModelsResponse,
+  CurrentModelsResponse,
 } from '@/types';
 
 export async function getSettings(): Promise<SettingsResponse> {
@@ -34,4 +36,15 @@ export async function deleteSetting(key: string): Promise<{ success: boolean }> 
 
 export async function restartBackend(): Promise<{ success: boolean; message: string }> {
   return apiClient.post<{ success: boolean; message: string }>('/settings/restart');
+}
+
+export async function getAvailableModels(
+  mode?: 'chat' | 'embedding'
+): Promise<AvailableModelsResponse> {
+  const query = mode ? `?mode=${mode}` : '';
+  return apiClient.get<AvailableModelsResponse>(`/settings/models${query}`);
+}
+
+export async function getCurrentModels(): Promise<CurrentModelsResponse> {
+  return apiClient.get<CurrentModelsResponse>('/settings/current-models');
 }

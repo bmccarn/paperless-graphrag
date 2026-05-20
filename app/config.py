@@ -12,6 +12,10 @@ from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CHAT_MODEL = "gemini-3.5-flash"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+LEGACY_CHAT_DEFAULT_MODELS = {"gpt-5-mini", "gpt-5.1"}
+
 # Path to persisted runtime settings
 # Use relative path that works for both Docker (/app) and local development
 _project_root = Path(__file__).parent.parent
@@ -23,10 +27,19 @@ def load_runtime_settings() -> Dict[str, Any]:
     if RUNTIME_SETTINGS_PATH.exists():
         try:
             with open(RUNTIME_SETTINGS_PATH) as f:
-                return json.load(f)
+                return normalize_legacy_model_defaults(json.load(f))
         except Exception as e:
             logger.warning("Failed to load runtime settings: %s", e)
     return {}
+
+
+def normalize_legacy_model_defaults(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Move persisted legacy default model values to the current default."""
+    normalized = dict(settings)
+    for key in ("indexing_model", "query_model"):
+        if normalized.get(key) in LEGACY_CHAT_DEFAULT_MODELS:
+            normalized[key] = DEFAULT_CHAT_MODEL
+    return normalized
 
 
 class IndexingMethod(str, Enum):
@@ -74,15 +87,15 @@ class Settings(BaseSettings):
 
     # Model selection
     indexing_model: str = Field(
-        default="gpt-5-mini",
+        default=DEFAULT_CHAT_MODEL,
         description="Model for GraphRAG indexing (entity extraction)"
     )
     query_model: str = Field(
-        default="gpt-5-mini",
+        default=DEFAULT_CHAT_MODEL,
         description="Model for GraphRAG queries (user-facing)"
     )
     embedding_model: str = Field(
-        default="text-embedding-3-small",
+        default=DEFAULT_EMBEDDING_MODEL,
         description="Model for text embeddings"
     )
 
