@@ -5,7 +5,11 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.config import DEFAULT_CHAT_MODEL, DEFAULT_EMBEDDING_MODEL
+from app.config import (
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_EMBEDDING_MODEL,
+    normalize_legacy_model_defaults,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +147,7 @@ class SettingsPersistence:
         if self.settings_path.exists():
             try:
                 with open(self.settings_path) as f:
-                    self._cache = json.load(f)
+                    self._cache = normalize_legacy_model_defaults(json.load(f))
                 logger.info("Loaded runtime settings from %s", self.settings_path)
             except Exception as e:
                 logger.warning("Failed to load runtime settings: %s", e)
